@@ -28,7 +28,8 @@ jobs:
       matrix:
         CONFIG: [IPQ60XX-WIFI]
         SOURCE: [LiBwrt/openwrt-6.x]
-        BRANCH: [main-nss]
+        #BRANCH: [main-nss]
+        BRANCH: [25.12-nss]
 
     uses: ./.github/workflows/WRT-CORE.yml
     with:
