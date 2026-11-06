@@ -269,3 +269,22 @@ UPDATE_PACKAGE \
 	"" \
 	"glass" \
 	"true"
+
+# Vantage LuCI 主题及仪表盘应用（适配 OpenWrt 25.12 / APK）
+# 上游仓库采用多 package 目录结构，复制主题和应用目录到 package/
+UPDATE_PACKAGE \
+	"luci-theme-vantage" \
+	"anothaDev/luci-theme-vantage" \
+	"main" \
+	"pkg" \
+	"luci-app-vantage" \
+	"true"
+
+# Material Design 3 LuCI 主题
+UPDATE_PACKAGE \
+	"luci-theme-material3" \
+	"michioxd/luci-theme-material3" \
+	"main" \
+	"name" \
+	"" \
+	"true"

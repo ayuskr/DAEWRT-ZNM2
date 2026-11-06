@@ -50,6 +50,9 @@ chmod 0755 ./files/etc/uci-defaults/99-default-theme
 echo "CONFIG_PACKAGE_luci=y" >> ./.config
 echo "CONFIG_LUCI_LANG_zh_Hans=y" >> ./.config
 echo "CONFIG_PACKAGE_luci-theme-glass=y" >> ./.config
+echo "CONFIG_PACKAGE_luci-theme-vantage=y" >> ./.config
+echo "CONFIG_PACKAGE_luci-app-vantage=y" >> ./.config
+echo "CONFIG_PACKAGE_luci-theme-material3=y" >> ./.config
 
 # 禁用原默认主题与其配置页面。
 echo "# CONFIG_PACKAGE_luci-theme-bootstrap is not set" >> ./.config

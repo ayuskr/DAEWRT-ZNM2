@@ -15,3 +15,12 @@
   
   全系带开源硬件加速。\
   一键加群👉：<a target="_blank" href="https://qm.qq.com/cgi-bin/qm/qr?k=6JLaTPbGP2Qc43A06HiIP7w-vCVrR7Iu&jump_from=webapi&authKey=aGTurX/4rsPB7hTWBLyXGQyzsYUdTyrjKXe7xwX0Dm3gqICCnIug5MkSoeeKqG0k"><img border="0" src="//pub.idqqimg.com/wpa/images/group.png" alt="GHNERCH-AX1800PRO交流群" title="GHNERCH-AX1800PRO交流群"></a>
+
+## 新增 LuCI 主题
+
+本修改版在固件中集成以下主题，默认仍使用 Glass，避免首次启动界面变化：
+
+- **Vantage**：`luci-theme-vantage`，同时集成可选仪表盘应用 `luci-app-vantage`
+- **Material Design 3**：`luci-theme-material3`
+
+编译目标当前使用 LiBwrt `25.12-nss`（APK 包管理），主题源码通过 `Scripts/Packages.sh` 拉取上游仓库的 package 目录。登录 LuCI 后可在「系统 → 系统 → 语言和界面」切换主题。
