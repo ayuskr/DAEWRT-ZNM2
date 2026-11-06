@@ -107,9 +107,13 @@ UPDATE_PACKAGE() {
 			echo "WARNING: Optional package directory was not found: $PKG_NAME"
 			return 0
 		fi
+
 	elif [ "$PKG_SPECIAL" = "name" ]; then
-		rm -rf "$PKG_NAME"
-		mv "$REPO_NAME" "$PKG_NAME"
+		# 修复：仓库目录名与目标包名相同时，不删除刚克隆的目录
+		if [ "$REPO_NAME" != "$PKG_NAME" ]; then
+			rm -rf "$PKG_NAME"
+			mv "$REPO_NAME" "$PKG_NAME"
+		fi
 	fi
 }
 
@@ -151,8 +155,7 @@ PATCH_DAED_MAKEFILE() {
 		exit 1
 	fi
 
-	# daed 源码包中可能已存在 wing 目录。克隆 dae-wing 前先删除，
-	# 防止 git clone 因目标目录非空而失败。
+	# dae-wing 克隆前清理目标目录
 	sed -i \
 		's@			git clone https://github.com/daeuniverse/dae-wing $(PKG_BUILD_DIR) && \\@			rm -rf $(PKG_BUILD_DIR) ; \\@' \
 		"$DAED_MAKEFILE"
@@ -162,22 +165,19 @@ PATCH_DAED_MAKEFILE() {
 			git clone https://github.com/daeuniverse/dae-wing $(PKG_BUILD_DIR) \&\& \\' \
 		"$DAED_MAKEFILE"
 
-	# GitHub Actions 中 pnpm 默认启用 frozen-lockfile。
-	# 当前 snapshot 的 package.json 与 pnpm-lock.yaml 不完全一致，
-	# 因此允许 pnpm 更新锁文件后安装依赖。
+	# 关闭 pnpm frozen-lockfile
 	sed -i \
 		's@			pnpm install ; \\@			pnpm install --no-frozen-lockfile ; \\@' \
 		"$DAED_MAKEFILE"
 
-	# 保留上游 workspace 构建命令，在构建结束后检查实际前端产物。
-	# 不使用 shell 的 $()，避免被 OpenWrt Make 提前展开。
+	# 检查 Daed 前端编译产物
 	sed -i \
 		's@			pnpm build --filter daed ; \\@			pnpm build --filter daed ; \\\
 			test -d apps/web/dist ; \\\
 			find apps/web/dist -type f -print -quit | grep -q . ; \\@' \
 		"$DAED_MAKEFILE"
 
-	# Build/Prepare 中任意命令失败时立即停止。
+	# Build/Prepare 中任意命令失败时立即停止
 	sed -i \
 		'/^define Build\/Prepare$/,/^endef$/ s/^[[:space:]]*( \\$/	( set -e; \\/' \
 		"$DAED_MAKEFILE"
@@ -198,12 +198,12 @@ PATCH_DAED_MAKEFILE() {
 	fi
 
 	if ! grep -q 'pnpm install --no-frozen-lockfile' <<< "$PREPARE_BLOCK"; then
-		echo "ERROR: Failed to disable pnpm frozen-lockfile mode."
+		echo "ERROR: Failed to disable pnpm frozen-lockfile."
 		exit 1
 	fi
 
 	if ! grep -q 'pnpm build --filter daed' <<< "$PREPARE_BLOCK"; then
-		echo "ERROR: The Daed frontend build command was lost while patching."
+		echo "ERROR: The Daed frontend build command was lost."
 		exit 1
 	fi
 
@@ -225,7 +225,7 @@ PATCH_DAED_MAKEFILE() {
 	echo "Frontend output check: enabled"
 }
 
-# 删除可能冲突的官方软件包。
+# 删除可能冲突的官方软件包
 rm -rf ../feeds/luci/applications/luci-app-passwall*
 rm -rf ../feeds/luci/applications/luci-app-mosdns*
 rm -rf ../feeds/luci/applications/luci-app-dockerman*
@@ -233,12 +233,12 @@ rm -rf ../feeds/luci/applications/luci-app-dae*
 rm -rf ../feeds/luci/applications/luci-app-bypass*
 rm -rf ../feeds/packages/net/dae*
 
-# 删除旧主题，统一使用 Glass。
+# 删除旧主题，统一使用 Glass
 rm -rf ../feeds/luci/themes/luci-theme-argon
 rm -rf ../feeds/luci/themes/luci-theme-aurora
 rm -rf ../feeds/luci/themes/luci-theme-glass
 
-# Daed 是必需组件。
+# Daed
 UPDATE_PACKAGE \
 	"luci-app-daed" \
 	"QiuSimons/luci-app-daed" \
@@ -249,7 +249,7 @@ UPDATE_PACKAGE \
 
 PATCH_DAED_MAKEFILE
 
-# Lucky 是必需组件。
+# Lucky
 UPDATE_PACKAGE \
 	"luci-app-lucky" \
 	"gdy666/luci-app-lucky" \
@@ -258,10 +258,9 @@ UPDATE_PACKAGE \
 	"lucky" \
 	"true"
 
-# GecoosAC 上游仓库当前不可匿名访问。
-# Config/GENERAL.txt 已移除 luci-app-gecoosac，因此这里不再下载。
+# GecoosAC 暂不下载
 
-# Glass 是必需主题。
+# Glass
 UPDATE_PACKAGE \
 	"luci-theme-glass" \
 	"rchen14b/luci-theme-glass" \
@@ -270,8 +269,7 @@ UPDATE_PACKAGE \
 	"glass" \
 	"true"
 
-# Vantage LuCI 主题及仪表盘应用（适配 OpenWrt 25.12 / APK）
-# 上游仓库采用多 package 目录结构，复制主题和应用目录到 package/
+# Vantage
 UPDATE_PACKAGE \
 	"luci-theme-vantage" \
 	"anothaDev/luci-theme-vantage" \
@@ -280,7 +278,7 @@ UPDATE_PACKAGE \
 	"luci-app-vantage" \
 	"true"
 
-# Material Design 3 LuCI 主题
+# Material Design 3
 UPDATE_PACKAGE \
 	"luci-theme-material3" \
 	"michioxd/luci-theme-material3" \
