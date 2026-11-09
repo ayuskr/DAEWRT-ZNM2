@@ -91,6 +91,16 @@ if [[ "$WRT_TARGET" == *"QUALCOMMAX"* ]]; then
 	echo "CONFIG_FEED_sqm_scripts_nss=n" >> ./.config
 	echo "CONFIG_NSS_FIRMWARE_VERSION_11_4=n" >> ./.config
 	echo "CONFIG_NSS_FIRMWARE_VERSION_12_5=y" >> ./.config
-	echo "CONFIG_PACKAGE_luci-app-sqm=y" >> ./.config
 	echo "CONFIG_PACKAGE_sqm-scripts-nss=y" >> ./.config
+
+	# Compile the PPE frontend alongside NSS; ECM auto-selection remains unchanged.
+	ECM_MAKEFILE="./feeds/nss_packages/qca-nss-ecm/Makefile"
+	if [ -f "$ECM_MAKEFILE" ] && grep -q '^ECM_MAKE_OPTS+=ECM_FRONT_END_NSS_ENABLE=y$' "$ECM_MAKEFILE"; then
+		if ! grep -q '^ECM_MAKE_OPTS+=ECM_FRONT_END_PPE_ENABLE=y$' "$ECM_MAKEFILE"; then
+			sed -i '/^ECM_MAKE_OPTS+=ECM_FRONT_END_NSS_ENABLE=y$/a ECM_MAKE_OPTS+=ECM_FRONT_END_PPE_ENABLE=y' "$ECM_MAKEFILE"
+		fi
+	else
+		echo "ERROR: qca-nss-ecm Makefile or NSS frontend configuration not found."
+		exit 1
+	fi
 fi
