@@ -1,5 +1,4 @@
-# DAEWRT-AX1800PRO
-京东云亚瑟AX1800pro专属固件包  
+ZNM2 专属固件包  
   
   固件集成增强版geoip.dat、geosite.dat,开箱即用，正确配置Dae不会报错
 
