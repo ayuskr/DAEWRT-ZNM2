@@ -93,14 +93,6 @@ if [[ "$WRT_TARGET" == *"QUALCOMMAX"* ]]; then
 	echo "CONFIG_NSS_FIRMWARE_VERSION_12_5=y" >> ./.config
 	echo "CONFIG_PACKAGE_sqm-scripts-nss=y" >> ./.config
 
-	# Compile the PPE frontend alongside NSS; ECM auto-selection remains unchanged.
-	ECM_MAKEFILE="./feeds/nss_packages/qca-nss-ecm/Makefile"
-	if [ -f "$ECM_MAKEFILE" ] && grep -q '^ECM_MAKE_OPTS+=ECM_FRONT_END_NSS_ENABLE=y$' "$ECM_MAKEFILE"; then
-		if ! grep -q '^ECM_MAKE_OPTS+=ECM_FRONT_END_PPE_ENABLE=y$' "$ECM_MAKEFILE"; then
-			sed -i '/^ECM_MAKE_OPTS+=ECM_FRONT_END_NSS_ENABLE=y$/a ECM_MAKE_OPTS+=ECM_FRONT_END_PPE_ENABLE=y' "$ECM_MAKEFILE"
-		fi
-	else
-		echo "ERROR: qca-nss-ecm Makefile or NSS frontend configuration not found."
-		exit 1
-	fi
+	# IPQ60xx/LiBwrt NSS feed 不提供 qca-nss-ppe，也没有 ppe_drv.h。
+	# ECM PPE frontend 无法在此目标编译，保持 NSS frontend 即可。
 fi
