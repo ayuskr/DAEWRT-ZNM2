@@ -30,6 +30,8 @@ CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS=y
 # CONFIG_TRANSPARENT_HUGEPAGE_NEVER is not set
 EOF
     echo "cat_kernel_config to $1 done"
+  else
+    echo "WARNING: kernel config-default not found: $1"
   fi
 }
 
@@ -130,11 +132,27 @@ CONFIG_KERNEL_SKB_RECYCLER_MULTI_CPU=y
 EOF
 }
 
+# 从配置文件解析明确的目标子平台名，例如 ipq60xx。
+# 不能再用 WRT_ARCH 切割：zn_m2 会被切成 m2，导致 config-default 路径失效。
+function target_subtarget() {
+  local platform=$(sed -n 's/^CONFIG_TARGET_\([A-Za-z0-9]*\)=y$/\1/p' \
+    "$GITHUB_WORKSPACE/Config/${WRT_CONFIG}.txt" | head -n 1)
+  local subtarget=$(sed -n "s/^CONFIG_TARGET_${platform}_\([A-Za-z0-9]*\)=y$/\1/p" \
+    "$GITHUB_WORKSPACE/Config/${WRT_CONFIG}.txt" | head -n 1)
+
+  if [ -z "$subtarget" ] && [ -n "$WRT_ARCH" ]; then
+    subtarget=$(echo "$WRT_ARCH" | cut -d'_' -f1)
+  fi
+
+  echo "$subtarget"
+}
+
 function generate_config() {
   config_file=".config"
   #如配置文件已存在
   cat $GITHUB_WORKSPACE/Config/${WRT_CONFIG}.txt $GITHUB_WORKSPACE/Config/GENERAL.txt  > $config_file
-  local target=$(echo $WRT_ARCH | cut -d'_' -f2)
+  local target=$(target_subtarget)
+  echo "kernel config-default target: qualcommax/${target}"
 
   #删除wifi依赖
   if [[ "$WRT_CONFIG" == *"NOWIFI"* ]]; then
@@ -154,9 +172,3 @@ function generate_config() {
   #增加内核选项
   cat_kernel_config "target/linux/qualcommax/${target}/config-default"
 }
-
-
-
-
-
-
