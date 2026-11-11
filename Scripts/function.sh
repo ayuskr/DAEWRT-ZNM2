@@ -105,14 +105,25 @@ function kernel_version() {
 }
 function remove_wifi() {
   local target=$1
-  #去除依赖
+  #去除依赖（含行尾形式）
   sed -i 's/\(ath11k-firmware-[^ ]*\|ipq-wifi-[^ ]*\|kmod-ath11k-[^ ]*\)//g' ./target/linux/qualcommax/Makefile
   sed -i 's/\(ath11k-firmware-[^ ]*\|ipq-wifi-[^ ]*\|kmod-ath11k-[^ ]*\)//g' ./target/linux/qualcommax/${target}/target.mk
   sed -i 's/\(ath11k-firmware-[^ ]*\|ipq-wifi-[^ ]*\|kmod-ath11k-[^ ]*\)//g' ./target/linux/qualcommax/image/${target}.mk
   sed -i 's/\(ath10k-firmware-[^ ]*\|kmod-ath10k [^ ]*\|kmod-ath10k-[^ ]*\)//g' ./target/linux/qualcommax/image/${target}.mk
+  #清除行尾残留（如 DEVICE_PACKAGES := ipq-wifi-zn_m2）
+  sed -i 's/[[:space:]]\+\(ath11k-firmware-\|ath10k-firmware-\|ipq-wifi-\|kmod-ath11k-\|kmod-ath10k-\)[^ ]*$//' ./target/linux/qualcommax/image/${target}.mk
+  sed -i 's/^[[:space:]]*\(ath11k-firmware-\|ath10k-firmware-\|ipq-wifi-\|kmod-ath11k-\|kmod-ath10k-\)[^ ]*[[:space:]]*$//' ./target/linux/qualcommax/image/${target}.mk
   #删除无线组件
   rm -rf package/network/services/hostapd
   rm -rf package/firmware/ipq-wifi
+
+  echo "---- zn_m2 device definition after wifi removal ----"
+  sed -n '/^define Device\/zn_m2/,/^endef/p' ./target/linux/qualcommax/image/${target}.mk
+
+  if grep -q 'ipq-wifi-zn_m2' ./target/linux/qualcommax/image/${target}.mk; then
+    echo "ERROR: ipq-wifi-zn_m2 still referenced after wifi removal"
+    exit 1
+  fi
 }
 
 function set_kernel_size() {
