@@ -27,8 +27,8 @@ jobs:
       fail-fast: false
       matrix:
         CONFIG: [IPQ60XX-WIFI]
-        SOURCE: [immortalwrt/immortalwrt]
-        BRANCH: [master]
+        SOURCE: [VIKINGYFY/immortalwrt]
+        BRANCH: [owrt]
 
     uses: ./.github/workflows/WRT-CORE.yml
     with:
