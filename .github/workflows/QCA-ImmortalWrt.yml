@@ -1,4 +1,4 @@
-# CI项目（测试分支：ImmortalWrt 源码）
+# CI项目（测试分支：ImmortalWrt 源码 / 无 WiFi 固件）
 name: QCA-ImmortalWrt
 
 on:
@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        CONFIG: [IPQ60XX-WIFI]
+        CONFIG: [IPQ60XX-NOWIFI]
         SOURCE: [VIKINGYFY/immortalwrt]
         BRANCH: [owrt]
 
