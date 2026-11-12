@@ -1,9 +1,11 @@
 #!/bin/bash
 
-function cat_kernel_config() {
-  if [ -f $1 ]; then
-    cat >> $1 <<EOF
-CONFIG_BPF=y
+# 只追加“不会打开子菜单、不与版本相关”的内核符号。
+# 教训：追加 TRANSPARENT_HUGEPAGE_*/DEBUG_INFO_REDUCED/SCHED_CLASS_EXT/ARM64_CONTPTE 这类
+# 选项组或新版本符号，会让 6.18 的 syncconfig 重新进入交互模式（Restart config / (NEW)），
+# 在 CI 非交互环境下直接 Error 1，内核编译中断。
+# eBPF 所需的 BTF 由上层的 CONFIG_KERNEL_DEBUG_INFO_BTF 负责，不需要在这里重复。
+KERNEL_SAFE_SYMBOLS='CONFIG_BPF=y
 CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y
 CONFIG_CGROUPS=y
@@ -14,25 +16,35 @@ CONFIG_NET_SCH_INGRESS=m
 CONFIG_NET_CLS_BPF=m
 CONFIG_NET_CLS_ACT=y
 CONFIG_BPF_STREAM_PARSER=y
-CONFIG_DEBUG_INFO=y
-# CONFIG_DEBUG_INFO_REDUCED is not set
-CONFIG_DEBUG_INFO_BTF=y
 CONFIG_KPROBE_EVENTS=y
-CONFIG_BPF_EVENTS=y
+CONFIG_BPF_EVENTS=y'
 
-CONFIG_SCHED_CLASS_EXT=y
-CONFIG_PROBE_EVENTS_BTF_ARGS=y
-CONFIG_IMX_SCMI_MISC_DRV=y
-CONFIG_ARM64_CONTPTE=y
-CONFIG_TRANSPARENT_HUGEPAGE=y
-CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS=y
-# CONFIG_TRANSPARENT_HUGEPAGE_MADVISE is not set
-# CONFIG_TRANSPARENT_HUGEPAGE_NEVER is not set
-EOF
-    echo "cat_kernel_config to $1 done"
-  else
-    echo "WARNING: kernel config-default not found: $1"
+function cat_kernel_config() {
+  local file=$1
+  if [ ! -f "$file" ]; then
+    echo "WARNING: kernel config-default not found: $file (skip kernel fragment)"
+    return 0
   fi
+
+  # 保证文件以换行结尾，否则追加的第一行会和原末行粘连
+  if [ -n "$(tail -c 1 "$file")" ]; then
+    echo "" >> "$file"
+  fi
+
+  local added=0 skipped=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local sym
+    sym=$(echo "$line" | sed -E 's/^(CONFIG_[A-Za-z0-9_]+)=.*/\1/')
+    if grep -qE "^${sym}=|^# ${sym} is not set$" "$file"; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+    echo "$line" >> "$file"
+    added=$((added + 1))
+  done <<< "$KERNEL_SAFE_SYMBOLS"
+
+  echo "cat_kernel_config -> $file (added ${added}, skipped ${skipped} existing)"
 }
 
 function cat_ebpf_config() {
@@ -143,7 +155,7 @@ CONFIG_KERNEL_SKB_RECYCLER_MULTI_CPU=y
 EOF
 }
 
-# 从配置文件解析明确的目标子平台名，例如 ipq60xx。
+# 从配置文件解析明确的目标子平台名，例如 ipq60xx / ipq807x。
 # 不能再用 WRT_ARCH 切割：zn_m2 会被切成 m2，导致 config-default 路径失效。
 function target_subtarget() {
   local platform=$(sed -n 's/^CONFIG_TARGET_\([A-Za-z0-9]*\)=y$/\1/p' \
@@ -180,6 +192,6 @@ function generate_config() {
   cat_ebpf_config $config_file
   enable_skb_recycler $config_file
   set_kernel_size
-  #增加内核选项
+  #增加内核选项（仅安全子集）
   cat_kernel_config "target/linux/qualcommax/${target}/config-default"
 }
