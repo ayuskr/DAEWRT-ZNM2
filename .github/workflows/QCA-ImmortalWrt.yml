@@ -26,11 +26,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ===== 临时诊断配置（排查 AX6 编译失败）=====
-        # 只跑 AX6，且强制 TEST=true，仅验证配置生成阶段。
-        # 排查完成后恢复为：
-        #   CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
-        #   WRT_TEST: ${{ inputs.TEST }}
+        # ===== 诊断第二阶段（排查 AX6 真编译失败）=====
+        # 只跑 AX6 真编译，便于定位失败步骤。
+        # 修好后恢复为：CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
         CONFIG: [IPQ807X-WIFI-YES]
         SOURCE: [VIKINGYFY/immortalwrt]
         BRANCH: [owrt]
@@ -48,5 +46,5 @@ jobs:
       WRT_BRANCH: ${{ matrix.BRANCH }}
       WRT_SOURCE: ${{ matrix.SOURCE }}
       WRT_PACKAGE: ${{ inputs.PACKAGE }}
-      WRT_TEST: 'true'
+      WRT_TEST: ${{ inputs.TEST }}
       CI_NAME: ${{ github.workflow }}
