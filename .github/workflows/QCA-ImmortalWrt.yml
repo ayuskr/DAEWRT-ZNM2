@@ -26,9 +26,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # IPQ60XX-NOWIFI : ZN-M2（京东云亚瑟 AX1800 Pro），编译期移除 WiFi
-        # IPQ807X-WIFI-YES: Redmi AX6，保留 WiFi
-        CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
+        # ===== 临时诊断配置（排查 AX6 编译失败）=====
+        # 只跑 AX6，且强制 TEST=true，仅验证配置生成阶段。
+        # 排查完成后恢复为：
+        #   CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
+        #   WRT_TEST: ${{ inputs.TEST }}
+        CONFIG: [IPQ807X-WIFI-YES]
         SOURCE: [VIKINGYFY/immortalwrt]
         BRANCH: [owrt]
 
@@ -45,5 +48,5 @@ jobs:
       WRT_BRANCH: ${{ matrix.BRANCH }}
       WRT_SOURCE: ${{ matrix.SOURCE }}
       WRT_PACKAGE: ${{ inputs.PACKAGE }}
-      WRT_TEST: ${{ inputs.TEST }}
+      WRT_TEST: 'true'
       CI_NAME: ${{ github.workflow }}
