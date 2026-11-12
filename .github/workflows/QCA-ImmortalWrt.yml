@@ -47,3 +47,50 @@ jobs:
       WRT_PACKAGE: ${{ inputs.PACKAGE }}
       WRT_TEST: ${{ inputs.TEST }}
       CI_NAME: ${{ github.workflow }}
+
+  # 编译全部结束后统一清理：只保留最近 KEEP 个“编译成功”的固件发布。
+  # 判定“成功”的依据是 Release 描述里没有「内核版本：none」——
+  # 那是 TEST 运行（只出配置、不出固件）的特征。
+  cleanup:
+    name: Clean Old Releases
+    needs: config
+    if: always() && !cancelled()
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Keep Latest Successful Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          KEEP: 3
+        run: |
+          set -uo pipefail
+
+          gh release list --limit 200 --json tagName,publishedAt \
+            --jq 'sort_by(.publishedAt) | reverse | .[] | [.tagName, .publishedAt] | @tsv' \
+            > /tmp/releases.tsv
+
+          kept=0
+          while IFS=$'\t' read -r tag published; do
+            [ -z "$tag" ] && continue
+
+            body=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
+
+            # TEST 空包：无内核/无插件，直接删除
+            if echo "$body" | grep -q "内核版本：none"; then
+              echo "删除 TEST 空包：$tag"
+              gh release delete "$tag" --yes --cleanup-tag || true
+              continue
+            fi
+
+            kept=$((kept + 1))
+            if [ "$kept" -le "$KEEP" ]; then
+              echo "保留（第 $kept 新）：$tag  ($published)"
+            else
+              echo "删除旧版本：$tag  ($published)"
+              gh release delete "$tag" --yes --cleanup-tag || true
+            fi
+          done < /tmp/releases.tsv
+
+          echo "======== 清理后剩余 ========"
+          gh release list --limit 20
