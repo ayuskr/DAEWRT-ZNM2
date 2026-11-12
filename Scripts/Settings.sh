@@ -16,12 +16,8 @@ if [ -n "$FLASH_JS" ]; then
 	sed -i "s/192\.168\.[0-9]*\.[0-9]*/$WRT_IP/g" $FLASH_JS
 fi
 
-# 添加编译日期标识。
-SYSTEM_JS=$(find ./feeds/luci/modules/luci-mod-status/ -type f -name "10_system.js")
-
-if [ -n "$SYSTEM_JS" ]; then
-	sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ DaeWRT-$WRT_DATE')/g" $SYSTEM_JS
-fi
+# 说明：不再向 LuCI 状态页追加 " / DaeWRT-<日期>" 之类的编译者标识，
+# 固件版本保持上游原样（ImmortalWrt SNAPSHOT rX-xxxxxxx / LuCI Master ...）。
 
 # 修改默认 IP 地址和主机名。
 CFG_FILE="./package/base-files/files/bin/config_generate"
@@ -61,24 +57,33 @@ echo "# CONFIG_PACKAGE_luci-app-argon-config is not set" >> ./.config
 echo "# CONFIG_PACKAGE_luci-theme-aurora is not set" >> ./.config
 echo "# CONFIG_PACKAGE_luci-app-aurora-config is not set" >> ./.config
 
-# 完整禁用 ZN-M2 WiFi 软件栈。
-echo "# CONFIG_PACKAGE_ipq-wifi-zn_m2 is not set" >> ./.config
-echo "# CONFIG_PACKAGE_kmod-ath11k is not set" >> ./.config
-echo "# CONFIG_PACKAGE_kmod-ath11k-ahb is not set" >> ./.config
-echo "# CONFIG_PACKAGE_kmod-ath11k-pci is not set" >> ./.config
-echo "# CONFIG_PACKAGE_ath11k-firmware-ipq6018 is not set" >> ./.config
-echo "# CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt is not set" >> ./.config
-echo "# CONFIG_PACKAGE_kmod-mac80211 is not set" >> ./.config
-echo "# CONFIG_PACKAGE_kmod-cfg80211 is not set" >> ./.config
-echo "# CONFIG_PACKAGE_kmod-lib80211 is not set" >> ./.config
-echo "# CONFIG_PACKAGE_wifi-scripts is not set" >> ./.config
-echo "# CONFIG_PACKAGE_wpad-openssl is not set" >> ./.config
-echo "# CONFIG_PACKAGE_wpad-basic-mbedtls is not set" >> ./.config
-echo "# CONFIG_PACKAGE_wpad-basic-wolfssl is not set" >> ./.config
-echo "# CONFIG_PACKAGE_hostapd-common is not set" >> ./.config
-echo "# CONFIG_PACKAGE_iw is not set" >> ./.config
-echo "# CONFIG_PACKAGE_iwinfo is not set" >> ./.config
-echo "# CONFIG_PACKAGE_luci-app-wireless is not set" >> ./.config
+# 是否移除 WiFi 由配置文件名决定：
+#   *NOWIFI*  -> 关闭整条无线软件栈（ZN-M2 无 WiFi 固件）
+#   其它      -> 保留 WiFi（如 IPQ807X-WIFI-YES / Redmi AX6）
+# 注意：本步骤在 generate_config 之后执行，写在这里的开关会覆盖设备配置，
+# 因此必须按配置分流，不能无条件关闭。
+if [[ "$WRT_CONFIG" == *"NOWIFI"* ]]; then
+	echo "关闭 WiFi 软件栈：$WRT_CONFIG"
+	echo "# CONFIG_PACKAGE_ipq-wifi-zn_m2 is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_kmod-ath11k is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_kmod-ath11k-ahb is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_kmod-ath11k-pci is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_ath11k-firmware-ipq6018 is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_kmod-mac80211 is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_kmod-cfg80211 is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_kmod-lib80211 is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_wifi-scripts is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_wpad-openssl is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_wpad-basic-mbedtls is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_wpad-basic-wolfssl is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_hostapd-common is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_iw is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_iwinfo is not set" >> ./.config
+	echo "# CONFIG_PACKAGE_luci-app-wireless is not set" >> ./.config
+else
+	echo "保留 WiFi 软件栈：$WRT_CONFIG"
+fi
 
 # 手动触发工作流时附加的插件配置。
 if [ -n "$WRT_PACKAGE" ]; then
