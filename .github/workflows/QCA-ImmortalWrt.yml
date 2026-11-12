@@ -1,4 +1,4 @@
-# CI项目（测试分支：ImmortalWrt 源码 / 无 WiFi 固件）
+# CI项目（测试分支：ImmortalWrt 源码 / 多机型）
 name: QCA-ImmortalWrt
 
 on:
@@ -26,7 +26,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        CONFIG: [IPQ60XX-NOWIFI]
+        # IPQ60XX-NOWIFI : ZN-M2（京东云亚瑟 AX1800 Pro），编译期移除 WiFi
+        # IPQ807X-WIFI-YES: Redmi AX6，保留 WiFi
+        CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
         SOURCE: [VIKINGYFY/immortalwrt]
         BRANCH: [owrt]
 
