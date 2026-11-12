@@ -115,6 +115,7 @@ jobs:
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' "./Config/$WRT_CONFIG.txt" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_ENV"
           echo "WRT_KVER=none" >> "$GITHUB_ENV"
           echo "WRT_LIST=none" >> "$GITHUB_ENV"
+          echo "WRT_WIFI=none" >> "$GITHUB_ENV"
           echo "WRT_CI=$WRT_CI" >> "$GITHUB_ENV"
 
           if [ -z "$WRT_ARCH" ]; then
@@ -287,9 +288,31 @@ jobs:
             "./upload/Config-$WRT_CONFIG-$WRT_VER-$WRT_DATE.txt"
 
           if [[ "$WRT_TEST" != "true" ]]; then
+            MANIFEST=$(find ./bin/targets/ -type f -name "*.manifest" | head -n 1)
+
             echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> "$GITHUB_ENV"
 
             echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> "$GITHUB_ENV"
+
+            # ===== WiFi 自检：直接从 manifest 判断无线组件是否真的进了固件 =====
+            if [ -n "$MANIFEST" ]; then
+              WIFI_WPAD=$(grep -oP '^wpad[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
+              WIFI_DRV=$(grep -oP '^kmod-ath1[0-9]k[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
+              WIFI_BDF=$(grep -oP '^ipq-wifi-[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
+              WIFI_UI=$(grep -oP '^luci-mod-network[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
+
+              if [ -n "$WIFI_WPAD" ]; then
+                echo "WRT_WIFI=✅ 已包含 | 认证端：${WIFI_WPAD:-无} | 驱动：${WIFI_DRV:-无} | 板级数据：${WIFI_BDF:-无} | 无线页面：${WIFI_UI:-无}" >> "$GITHUB_ENV"
+              else
+                echo "WRT_WIFI=❌ 未包含（无 wpad/hostapd，属无 WiFi 固件）" >> "$GITHUB_ENV"
+              fi
+
+              echo "======== wifi check ========"
+              grep -E '^(wpad|kmod-ath|ipq-wifi|luci-mod-network)' "$MANIFEST" || echo "no wifi packages"
+              echo "============================"
+            else
+              echo "WRT_WIFI=未知（未找到 manifest）" >> "$GITHUB_ENV"
+            fi
 
             find ./bin/targets/ \
               -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" \
@@ -334,4 +357,5 @@ jobs:
             WIFI密码：${{ env.WRT_WORD }}
 
             内核版本：${{ env.WRT_KVER }}
+            WiFi 状态：${{ env.WRT_WIFI }}
             插件列表：${{ env.WRT_LIST }}
