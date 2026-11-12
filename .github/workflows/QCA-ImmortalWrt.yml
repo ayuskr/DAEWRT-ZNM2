@@ -48,9 +48,13 @@ jobs:
       WRT_TEST: ${{ inputs.TEST }}
       CI_NAME: ${{ github.workflow }}
 
-  # 编译全部结束后统一清理：只保留最近 KEEP 个“编译成功”的固件发布。
-  # 判定“成功”的依据是 Release 描述里没有「内核版本：none」——
-  # 那是 TEST 运行（只出配置、不出固件）的特征。
+  # 编译全部结束后统一清理（避免与矩阵 job 并发误删）。
+  #
+  # 规则：
+  #   1. TEST 空包（描述里「内核版本：none」）一律删除；
+  #   2. 按“型号”分组，每个型号各保留最近 2 次编译成功的固件；
+  #      —— 防止反复编译某一型号把另一型号挤掉；
+  #   3. 不在 ACTIVE_MODELS 里的旧型号（如 IPQ60XX-WIFI、LiBwrt 系列）视为已下线，全部删除。
   cleanup:
     name: Clean Old Releases
     needs: config
@@ -58,11 +62,13 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Keep Latest Successful Releases
+      - name: Keep Latest 2 Successful Releases Per Model
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          KEEP: 3
+          KEEP_PER_MODEL: 2
+          # 与上方 matrix.CONFIG 保持一致；新增机型时记得同步这里
+          ACTIVE_MODELS: IPQ60XX-NOWIFI IPQ807X-WIFI-YES
         run: |
           set -uo pipefail
 
@@ -70,27 +76,44 @@ jobs:
             --jq 'sort_by(.publishedAt) | reverse | .[] | [.tagName, .publishedAt] | @tsv' \
             > /tmp/releases.tsv
 
-          kept=0
+          declare -A seen
+
           while IFS=$'\t' read -r tag published; do
             [ -z "$tag" ] && continue
 
             body=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
 
-            # TEST 空包：无内核/无插件，直接删除
+            # 1. TEST 空包（只有配置、没有固件）
             if echo "$body" | grep -q "内核版本：none"; then
               echo "删除 TEST 空包：$tag"
               gh release delete "$tag" --yes --cleanup-tag || true
               continue
             fi
 
-            kept=$((kept + 1))
-            if [ "$kept" -le "$KEEP" ]; then
-              echo "保留（第 $kept 新）：$tag  ($published)"
+            # 2. 从 tag 解析型号：QCA-xxx-<MODEL>_<日期> -> <MODEL>
+            model=$(echo "$tag" | grep -oP 'IPQ[0-9]+XX-[A-Z-]+(?=_[0-9])' | head -n 1)
+
+            if [ -z "$model" ]; then
+              echo "跳过（无法识别型号，未删除）：$tag"
+              continue
+            fi
+
+            # 3. 已下线型号
+            if ! echo "$ACTIVE_MODELS" | tr ' ' '\n' | grep -qx "$model"; then
+              echo "删除已下线型号（$model）：$tag"
+              gh release delete "$tag" --yes --cleanup-tag || true
+              continue
+            fi
+
+            # 4. 按型号分别计数，各保留最新 KEEP_PER_MODEL 个
+            seen[$model]=$(( ${seen[$model]:-0} + 1 ))
+            if [ "${seen[$model]}" -le "$KEEP_PER_MODEL" ]; then
+              echo "保留 $model 第 ${seen[$model]} 新：$tag  ($published)"
             else
-              echo "删除旧版本：$tag  ($published)"
+              echo "删除 $model 旧版本（第 ${seen[$model]} 新）：$tag  ($published)"
               gh release delete "$tag" --yes --cleanup-tag || true
             fi
           done < /tmp/releases.tsv
 
           echo "======== 清理后剩余 ========"
-          gh release list --limit 20
+          gh release list --limit 30
