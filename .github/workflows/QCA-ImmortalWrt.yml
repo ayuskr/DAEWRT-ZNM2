@@ -17,6 +17,11 @@ on:
         default: 'false'
         required: false
         type: boolean
+      KEEP_MODEL:
+        description: '是否把本次编译的型号加入保留清单？选否则本次固件仍保留，但下次编译会自动清理该型号。'
+        default: false
+        required: false
+        type: boolean
 
 permissions: write-all
 
@@ -50,11 +55,14 @@ jobs:
 
   # 编译全部结束后统一清理（避免与矩阵 job 并发误删）。
   #
-  # 规则：
-  #   1. TEST 空包（描述里「内核版本：none」）一律删除；
-  #   2. 按“型号”分组，每个型号各保留最近 2 次编译成功的固件；
-  #      —— 防止反复编译某一型号把另一型号挤掉；
-  #   3. 不在 ACTIVE_MODELS 里的旧型号（如 IPQ60XX-WIFI、LiBwrt 系列）视为已下线，全部删除。
+  # 保留清单：.github/keep-models.txt，每行一个型号（如 IPQ807X-WIFI-YES）。
+  # 手动运行时可勾选 KEEP_MODEL 决定是否把本次编译的型号写进清单。
+  #
+  # 清理规则：
+  #   1. TEST 空包（描述含「内核版本：none」）     -> 删除
+  #   2. 型号在保留清单里                          -> 按型号各保留最新 2 个
+  #   3. 型号不在清单里，但是本次编译产出的        -> 本次保留（选“否”时只留这一批）
+  #   4. 型号不在清单里，也不是本次产出的          -> 删除（相当于自动下线清理）
   cleanup:
     name: Clean Old Releases
     needs: config
@@ -62,15 +70,71 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      - name: Checkout Projects
+        uses: actions/checkout@main
+
+      - name: Update Keep Models List
+        if: ${{ inputs.KEEP_MODEL == true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+
+          keepfile=.github/keep-models.txt
+          touch "$keepfile"
+
+          # 本次编译产出的型号：取本 run 开始后发布的 release
+          started=$(gh run view "$GITHUB_RUN_ID" --json startedAt --jq '.startedAt')
+          echo "本 run 开始时间：$started"
+
+          gh release list --limit 100 --json tagName,publishedAt \
+            --jq --arg s "$started" '.[] | select(.publishedAt >= $s) | .tagName' |
+            grep -oP 'IPQ[0-9]+XX-[A-Z-]+(?=_[0-9])' |
+            sort -u > /tmp/new-models.txt || true
+
+          added=0
+          while read -r m; do
+            [ -z "$m" ] && continue
+            if grep -qx "$m" "$keepfile"; then
+              echo "已在清单中：$m"
+            else
+              echo "$m" >> "$keepfile"
+              added=$((added + 1))
+              echo "加入保留清单：$m"
+            fi
+          done < /tmp/new-models.txt
+
+          sort -u "$keepfile" -o "$keepfile"
+
+          if [ "$added" -gt 0 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$keepfile"
+            git commit -m "chore: 保留清单新增型号 $(tr '\n' ' ' < /tmp/new-models.txt)"
+            git push
+            echo "======== 当前保留清单 ========"
+            cat "$keepfile"
+          else
+            echo "保留清单无需变更"
+          fi
+
       - name: Keep Latest 2 Successful Releases Per Model
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           KEEP_PER_MODEL: 2
-          # 与上方 matrix.CONFIG 保持一致；新增机型时记得同步这里
-          ACTIVE_MODELS: IPQ60XX-NOWIFI IPQ807X-WIFI-YES
         run: |
           set -uo pipefail
+
+          keepfile=.github/keep-models.txt
+          [ -f "$keepfile" ] || : > "$keepfile"
+
+          started=$(gh run view "$GITHUB_RUN_ID" --json startedAt --jq '.startedAt')
+
+          echo "======== 保留清单 ========"
+          cat "$keepfile"
+          echo "=========================="
 
           gh release list --limit 200 --json tagName,publishedAt \
             --jq 'sort_by(.publishedAt) | reverse | .[] | [.tagName, .publishedAt] | @tsv' \
@@ -83,34 +147,40 @@ jobs:
 
             body=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
 
-            # 1. TEST 空包（只有配置、没有固件）
+            # 1. TEST 空包
             if echo "$body" | grep -q "内核版本：none"; then
               echo "删除 TEST 空包：$tag"
               gh release delete "$tag" --yes --cleanup-tag || true
               continue
             fi
 
-            # 2. 从 tag 解析型号：QCA-xxx-<MODEL>_<日期> -> <MODEL>
+            # 型号解析：QCA-xxx-<型号>_<日期> -> <型号>
             model=$(echo "$tag" | grep -oP 'IPQ[0-9]+XX-[A-Z-]+(?=_[0-9])' | head -n 1)
-
             if [ -z "$model" ]; then
               echo "跳过（无法识别型号，未删除）：$tag"
               continue
             fi
 
-            # 3. 已下线型号
-            if ! echo "$ACTIVE_MODELS" | tr ' ' '\n' | grep -qx "$model"; then
-              echo "删除已下线型号（$model）：$tag"
-              gh release delete "$tag" --yes --cleanup-tag || true
-              continue
+            built_now=0
+            if [[ "$published" > "$started" || "$published" == "$started" ]]; then
+              built_now=1
             fi
 
-            # 4. 按型号分别计数，各保留最新 KEEP_PER_MODEL 个
-            seen[$model]=$(( ${seen[$model]:-0} + 1 ))
-            if [ "${seen[$model]}" -le "$KEEP_PER_MODEL" ]; then
-              echo "保留 $model 第 ${seen[$model]} 新：$tag  ($published)"
+            if grep -qx "$model" "$keepfile"; then
+              # 2. 在清单里：按型号各保留最新 KEEP_PER_MODEL 个
+              seen[$model]=$(( ${seen[$model]:-0} + 1 ))
+              if [ "${seen[$model]}" -le "$KEEP_PER_MODEL" ]; then
+                echo "保留 $model 第 ${seen[$model]} 新：$tag  ($published)"
+              else
+                echo "删除 $model 旧版本（第 ${seen[$model]} 新）：$tag  ($published)"
+                gh release delete "$tag" --yes --cleanup-tag || true
+              fi
+            elif [ "$built_now" = "1" ]; then
+              # 3. 不在清单，但本次刚编出来：本次保留
+              echo "保留本次编译（机型未入清单，下次将被清理）：$tag"
             else
-              echo "删除 $model 旧版本（第 ${seen[$model]} 新）：$tag  ($published)"
+              # 4. 不在清单，也不是本次产出：删除
+              echo "删除（型号 $model 不在保留清单）：$tag  ($published)"
               gh release delete "$tag" --yes --cleanup-tag || true
             fi
           done < /tmp/releases.tsv
