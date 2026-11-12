@@ -26,10 +26,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ===== 诊断第二阶段（排查 AX6 真编译失败）=====
-        # 只跑 AX6 真编译，便于定位失败步骤。
-        # 修好后恢复为：CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
-        CONFIG: [IPQ807X-WIFI-YES]
+        # IPQ60XX-NOWIFI : ZN-M2（京东云亚瑟 AX1800 Pro），编译期移除 WiFi
+        # IPQ807X-WIFI-YES: Redmi AX6，保留 WiFi（需先刷 OpenWrt U-Boot）
+        CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
         SOURCE: [VIKINGYFY/immortalwrt]
         BRANCH: [owrt]
 
