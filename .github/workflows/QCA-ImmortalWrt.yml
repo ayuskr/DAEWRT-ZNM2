@@ -64,8 +64,10 @@ jobs:
   #   3. 型号不在清单里，但是本次编译产出的     -> 本次保留
   #   4. 型号不在清单里，也不是本次产出的       -> 删除（自动下线清理）
   #
-  # 注意：run 步骤默认是 bash -e -o pipefail，单条命令返回非 0 会中断整个脚本。
-  # 清理属于“尽力而为”的操作，这里显式 set +e，并让 gh 不读 stdin（否则会吃掉循环输入）。
+  # 注意：
+  #   * run 步骤默认 bash -e -o pipefail，清理属尽力而为，显式 set +e；
+  #   * gh 子命令一律 < /dev/null，否则会吃掉 while 循环的输入；
+  #   * 刚创建的 release 可能有几秒延迟不出现在列表里，计数前先等索引稳定。
   cleanup:
     name: Clean Old Releases
     needs: config
@@ -125,6 +127,30 @@ jobs:
 
           exit 0
 
+      - name: Wait For Release Index
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+
+          # 刚发布的 release 需要几秒才会出现在列表接口里。
+          # 若此时直接统计，会少算一个，导致某型号多留一份旧固件。
+          prev=-1
+          for i in 1 2 3 4 5 6; do
+            n=$(gh api "repos/$GH_REPO/releases?per_page=100" --jq 'length' < /dev/null)
+            n=${n:-0}
+            echo "第 $i 次探测：release 数量 = $n"
+            if [ "$n" = "$prev" ]; then
+              echo "数量已稳定，继续清理"
+              break
+            fi
+            prev=$n
+            sleep 10
+          done
+
+          exit 0
+
       - name: Keep Latest 2 Successful Releases Per Model
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -170,7 +196,7 @@ jobs:
               continue
             fi
 
-            # 型号解析：QCA-xxx-<型号>_<日期> -> <型号>（sed 不会因无匹配而返回非 0）
+            # 型号解析：QCA-xxx-<型号>_<日期> -> <型号>（sed 无匹配时也返回 0）
             model=$(echo "$tag" | sed -nE 's/^.*(IPQ[0-9]+XX-[A-Z-]+)_[0-9]{2}\.[0-9]{2}\.[0-9]{2}-[0-9.]+$/\1/p')
 
             if [ -z "$model" ]; then
