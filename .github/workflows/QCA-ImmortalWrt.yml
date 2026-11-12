@@ -59,10 +59,13 @@ jobs:
   # 手动运行时可勾选 KEEP_MODEL 决定是否把本次编译的型号写进清单。
   #
   # 清理规则：
-  #   1. TEST 空包（描述含「内核版本：none」）     -> 删除
-  #   2. 型号在保留清单里                          -> 按型号各保留最新 2 个
-  #   3. 型号不在清单里，但是本次编译产出的        -> 本次保留（选“否”时只留这一批）
-  #   4. 型号不在清单里，也不是本次产出的          -> 删除（相当于自动下线清理）
+  #   1. TEST 空包（描述含「内核版本：none」）  -> 删除
+  #   2. 型号在保留清单里                       -> 按型号各保留最新 2 个
+  #   3. 型号不在清单里，但是本次编译产出的     -> 本次保留
+  #   4. 型号不在清单里，也不是本次产出的       -> 删除（自动下线清理）
+  #
+  # 注意：run 步骤默认是 bash -e -o pipefail，单条命令返回非 0 会中断整个脚本。
+  # 清理属于“尽力而为”的操作，这里显式 set +e，并让 gh 不读 stdin（否则会吃掉循环输入）。
   cleanup:
     name: Clean Old Releases
     needs: config
@@ -79,19 +82,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          set -uo pipefail
+          set +e
 
           keepfile=.github/keep-models.txt
           touch "$keepfile"
 
-          # 本次编译产出的型号：取本 run 开始后发布的 release
-          started=$(gh run view "$GITHUB_RUN_ID" --json startedAt --jq '.startedAt')
-          echo "本 run 开始时间：$started"
+          started=$(gh run view "$GITHUB_RUN_ID" --json startedAt --jq '.startedAt' < /dev/null)
 
           gh release list --limit 100 --json tagName,publishedAt \
-            --jq --arg s "$started" '.[] | select(.publishedAt >= $s) | .tagName' |
-            grep -oP 'IPQ[0-9]+XX-[A-Z-]+(?=_[0-9])' |
-            sort -u > /tmp/new-models.txt || true
+            --jq --arg s "$started" '.[] | select(.publishedAt >= $s) | .tagName' < /dev/null \
+            | sed -nE 's/^.*(IPQ[0-9]+XX-[A-Z-]+)_[0-9]{2}\.[0-9]{2}\.[0-9]{2}-[0-9.]+$/\1/p' \
+            | sort -u > /tmp/new-models.txt
+
+          echo "======== 本次编译型号 ========"
+          cat /tmp/new-models.txt
 
           added=0
           while read -r m; do
@@ -119,43 +123,56 @@ jobs:
             echo "保留清单无需变更"
           fi
 
+          exit 0
+
       - name: Keep Latest 2 Successful Releases Per Model
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           KEEP_PER_MODEL: 2
         run: |
-          set -uo pipefail
+          set +e
 
           keepfile=.github/keep-models.txt
-          [ -f "$keepfile" ] || : > "$keepfile"
+          [ -f "$keepfile" ] || touch "$keepfile"
 
-          started=$(gh run view "$GITHUB_RUN_ID" --json startedAt --jq '.startedAt')
+          started=$(gh run view "$GITHUB_RUN_ID" --json startedAt --jq '.startedAt' < /dev/null)
 
           echo "======== 保留清单 ========"
           cat "$keepfile"
           echo "=========================="
 
           gh release list --limit 200 --json tagName,publishedAt \
-            --jq 'sort_by(.publishedAt) | reverse | .[] | [.tagName, .publishedAt] | @tsv' \
+            --jq 'sort_by(.publishedAt) | reverse | .[] | [.tagName, .publishedAt] | @tsv' < /dev/null \
             > /tmp/releases.tsv
 
+          echo "共 $(wc -l < /tmp/releases.tsv) 个发布待检查"
+
           declare -A seen
+          deleted=0
+          kept=0
+          failed=0
 
           while IFS=$'\t' read -r tag published; do
             [ -z "$tag" ] && continue
 
-            body=$(gh release view "$tag" --json body --jq '.body' 2>/dev/null || echo "")
+            body=$(gh release view "$tag" --json body --jq '.body' < /dev/null 2>/dev/null)
 
-            # 1. TEST 空包
+            # 1. TEST 空包（只有配置、没有固件）
             if echo "$body" | grep -q "内核版本：none"; then
-              echo "删除 TEST 空包：$tag"
-              gh release delete "$tag" --yes --cleanup-tag || true
+              if gh release delete "$tag" --yes --cleanup-tag < /dev/null; then
+                echo "删除 TEST 空包：$tag"
+                deleted=$((deleted + 1))
+              else
+                echo "!! 删除失败：$tag"
+                failed=$((failed + 1))
+              fi
               continue
             fi
 
-            # 型号解析：QCA-xxx-<型号>_<日期> -> <型号>
-            model=$(echo "$tag" | grep -oP 'IPQ[0-9]+XX-[A-Z-]+(?=_[0-9])' | head -n 1)
+            # 型号解析：QCA-xxx-<型号>_<日期> -> <型号>（sed 不会因无匹配而返回非 0）
+            model=$(echo "$tag" | sed -nE 's/^.*(IPQ[0-9]+XX-[A-Z-]+)_[0-9]{2}\.[0-9]{2}\.[0-9]{2}-[0-9.]+$/\1/p')
+
             if [ -z "$model" ]; then
               echo "跳过（无法识别型号，未删除）：$tag"
               continue
@@ -167,23 +184,37 @@ jobs:
             fi
 
             if grep -qx "$model" "$keepfile"; then
-              # 2. 在清单里：按型号各保留最新 KEEP_PER_MODEL 个
+              # 2. 在清单里：同一型号各保留最新 KEEP_PER_MODEL 个
               seen[$model]=$(( ${seen[$model]:-0} + 1 ))
               if [ "${seen[$model]}" -le "$KEEP_PER_MODEL" ]; then
                 echo "保留 $model 第 ${seen[$model]} 新：$tag  ($published)"
+                kept=$((kept + 1))
               else
-                echo "删除 $model 旧版本（第 ${seen[$model]} 新）：$tag  ($published)"
-                gh release delete "$tag" --yes --cleanup-tag || true
+                if gh release delete "$tag" --yes --cleanup-tag < /dev/null; then
+                  echo "删除 $model 旧版本（第 ${seen[$model]} 新）：$tag  ($published)"
+                  deleted=$((deleted + 1))
+                else
+                  echo "!! 删除失败：$tag"
+                  failed=$((failed + 1))
+                fi
               fi
             elif [ "$built_now" = "1" ]; then
               # 3. 不在清单，但本次刚编出来：本次保留
               echo "保留本次编译（机型未入清单，下次将被清理）：$tag"
+              kept=$((kept + 1))
             else
               # 4. 不在清单，也不是本次产出：删除
-              echo "删除（型号 $model 不在保留清单）：$tag  ($published)"
-              gh release delete "$tag" --yes --cleanup-tag || true
+              if gh release delete "$tag" --yes --cleanup-tag < /dev/null; then
+                echo "删除（型号 $model 不在保留清单）：$tag  ($published)"
+                deleted=$((deleted + 1))
+              else
+                echo "!! 删除失败：$tag"
+                failed=$((failed + 1))
+              fi
             fi
           done < /tmp/releases.tsv
 
-          echo "======== 清理后剩余 ========"
-          gh release list --limit 30
+          echo "======== 汇总：保留 $kept，删除 $deleted，失败 $failed ========"
+          gh release list --limit 30 < /dev/null
+
+          [ "$failed" -eq 0 ]
