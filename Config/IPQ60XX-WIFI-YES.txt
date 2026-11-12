@@ -1,0 +1,41 @@
+# ZN-M2 / JDCloud AX1800 Pro（保留 WiFi，备用配置，当前工作流未使用）
+# 若要用它编译，把 QCA-ImmortalWrt.yml 的 matrix.CONFIG 改成 IPQ60XX-WIFI-YES
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+CONFIG_TARGET_MULTI_PROFILE=y
+CONFIG_TARGET_PER_DEVICE_ROOTFS=y
+
+# 设备列表
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2=y
+
+# WiFi 说明：此处不覆盖任何无线相关开关。
+# ZN-M2 的 ath11k（ipq6000 集成的 2.4G/5G）由以下默认来源带入：
+#   - 目标默认包：kmod-ath11k / kmod-ath11k-ahb / kmod-ath11k-pci / wpad-openssl / wifi-scripts / iw / iwinfo
+#   - 设备包：ipq-wifi-zn_m2
+#   - luci-app-wireless / luci-proto-wireless 由 luci 默认带入
+
+# 内核配置
+CONFIG_KERNEL_ARM_PMU=y
+CONFIG_KERNEL_CFQ_GROUP_IOSCHED=y
+CONFIG_KERNEL_CGROUP_DEVICE=y
+CONFIG_KERNEL_CGROUP_FREEZER=y
+CONFIG_KERNEL_CGROUP_HUGETLB=y
+CONFIG_KERNEL_CGROUP_NET_PRIO=y
+CONFIG_KERNEL_CGROUP_PERF=y
+CONFIG_KERNEL_HUGETLBFS=y
+CONFIG_KERNEL_HUGETLB_PAGE=y
+CONFIG_KERNEL_MEMCG_SWAP_ENABLED=y
+CONFIG_KERNEL_NET_CLS_CGROUP=y
+CONFIG_KERNEL_PERF_EVENTS=y
+# CONFIG_KERNEL_PREEMPT_RCU is not set
+
+# 内存/无线固件配置
+CONFIG_IPQ_MEM_PROFILE_1024=n
+CONFIG_IPQ_MEM_PROFILE_512=y
+CONFIG_ATH11K_MEM_PROFILE_1G=n
+CONFIG_ATH11K_MEM_PROFILE_512M=y
+
+# 说明：以下两项在本源码（VIKINGYFY/immortalwrt owrt）中不存在对应包/feed，
+# defconfig 会自动忽略，保留仅为与旧 LiBwrt 配置对齐。
+CONFIG_PACKAGE_sqm-scripts-nss=y
+CONFIG_PACKAGE_kmod-qca-nss-crypto=y
