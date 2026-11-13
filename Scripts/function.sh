@@ -91,6 +91,11 @@ fi
 
 }
 
+# NSS 强制配置：历史上为 ipq60xx（ZN-M2）调参。
+# 注意：这里同时把固件版本钉成 12_2，与 Settings.sh 里的 12_5 冲突；
+# 且 ipq807x 的以太网（qca-nss-dp）也在该体系内，
+# 无差别套用会造成“内核启动、灯亮、但所有网口不通”。
+# 因此该函数只在 ipq60xx 上调用，ipq807x 一律沿用上游默认值。
 function set_nss_driver() {
   cat >> $1 <<EOF
 #NSS驱动相关
@@ -147,7 +152,7 @@ function set_kernel_size() {
   sed -i "/^define Device\/redmi_ax5-jdcloud/,/^endef/ { /KERNEL_SIZE := 6144k/s//KERNEL_SIZE := 12288k/ }" $image_file
   sed -i "/^define Device\/linksys_mr/,/^endef/ { /KERNEL_SIZE := 8192k/s//KERNEL_SIZE := 12288k/ }" $image_file
 }
-#开启内存回收补丁
+#开启内存回收补丁（同样只对 ipq60xx 生效）
 function enable_skb_recycler() {
   cat >> $1 <<EOF
 CONFIG_KERNEL_SKB_RECYCLER=y
@@ -187,10 +192,19 @@ function generate_config() {
     echo "CONFIG_USE_APK=n" >> $config_file
   fi
 
-  set_nss_driver $config_file
+  # NSS / SKB Recycler 强制项只对 ipq60xx 生效。
+  # ipq807x 沿用上游默认，否则会与目标自身的 NSS 选型冲突，
+  # 表现为：系统能启动、指示灯正常，但所有有线网口不通。
+  if [[ "$target" == "ipq60xx" ]]; then
+    echo "apply NSS + SKB recycler forcing: qualcommax/${target}"
+    set_nss_driver $config_file
+    enable_skb_recycler $config_file
+  else
+    echo "skip NSS + SKB recycler forcing: qualcommax/${target} (use upstream defaults)"
+  fi
+
   #增加ebpf
   cat_ebpf_config $config_file
-  enable_skb_recycler $config_file
   set_kernel_size
   #增加内核选项（仅安全子集）
   cat_kernel_config "target/linux/qualcommax/${target}/config-default"
