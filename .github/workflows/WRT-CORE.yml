@@ -1,4 +1,7 @@
-# 云编译公用核心
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 VIKINGYFY
+
+#云编译公用核心
 name: WRT-CORE
 
 on:
@@ -32,63 +35,39 @@ on:
         required: true
         type: string
       WRT_SOURCE:
-        required: false
+        required: true
         type: string
       WRT_PACKAGE:
         required: false
         type: string
       WRT_TEST:
         required: false
-        type: string
-      CI_NAME:
-        required: false
-        type: string
-      WRT_ARCH:
-        required: false
-        type: string
+        default: false
+        type: boolean
 
 env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  WRT_CONFIG: ${{ inputs.WRT_CONFIG }}
-  WRT_THEME: ${{ inputs.WRT_THEME }}
-  WRT_NAME: ${{ inputs.WRT_NAME }}
-  WRT_SSID: ${{ inputs.WRT_SSID }}
-  WRT_WORD: ${{ inputs.WRT_WORD }}
-  WRT_IP: ${{ inputs.WRT_IP }}
-  WRT_PW: ${{ inputs.WRT_PW }}
-  WRT_REPO: ${{ inputs.WRT_REPO }}
-  WRT_BRANCH: ${{ inputs.WRT_BRANCH }}
-  WRT_PACKAGE: ${{ inputs.WRT_PACKAGE }}
-  WRT_TEST: ${{ inputs.WRT_TEST }}
-  WRT_DIR: wrt
-  CI_NAME: ${{ inputs.CI_NAME }}
-  WRT_ARCH: ${{ inputs.WRT_ARCH }}
+  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+  WRT_CONFIG: ${{inputs.WRT_CONFIG}}
+  WRT_THEME: ${{inputs.WRT_THEME}}
+  WRT_NAME: ${{inputs.WRT_NAME}}
+  WRT_SSID: ${{inputs.WRT_SSID}}
+  WRT_WORD: ${{inputs.WRT_WORD}}
+  WRT_IP: ${{inputs.WRT_IP}}
+  WRT_PW: ${{inputs.WRT_PW}}
+  WRT_REPO: ${{inputs.WRT_REPO}}
+  WRT_BRANCH: ${{inputs.WRT_BRANCH}}
+  WRT_SOURCE: ${{inputs.WRT_SOURCE}}
+  WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
+  WRT_TEST: ${{inputs.WRT_TEST}}
 
 jobs:
   core:
-    name: ${{ inputs.WRT_SOURCE }}
-    runs-on: ubuntu-24.04
-
+    name: ${{inputs.WRT_SOURCE}}
+    runs-on: ubuntu-latest
+    outputs:
+      cache_prefix: ${{steps.initialize-values.outputs.cache_prefix}}
+      cache_key: ${{steps.clone-code.outputs.cache_key}}
     steps:
-      - name: Install BC
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo -E apt -yqq install bc
-
-      - name: Free Disk Space
-        uses: endersonmenezes/free-disk-space@v2
-        with:
-          remove_android: true
-          remove_dotnet: true
-          remove_haskell: true
-          remove_tool_cache: true
-          remove_swap: true
-          remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
-          remove_packages_one_command: true
-          remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/share/glade* /usr/local/share/chromium /usr/local/share/powershell"
-          testing: false
-
       - name: Checkout Projects
         uses: actions/checkout@main
 
@@ -96,97 +75,95 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo -E apt -yqq purge firefox
-          sudo -E apt -yqq update
-          sudo -E apt -yqq full-upgrade
-          sudo -E apt -yqq autoremove --purge
-          sudo -E apt -yqq autoclean
-          sudo -E apt -yqq clean
-          sudo -E apt -yqq install dos2unix libfuse-dev
-          sudo bash "$GITHUB_WORKSPACE/Scripts/init_build_environment.sh"
-          sudo -E systemctl daemon-reload
-          sudo -E timedatectl set-timezone "Asia/Shanghai"
+          sudo apt-get -yqq purge firefox
+          sudo apt-get -yqq update
+          sudo apt-get -yqq full-upgrade
+          sudo apt-get -yqq autoremove --purge
+          sudo apt-get -yqq autoclean
+          sudo apt-get -yqq clean
+
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential bzip2 ca-certificates ccache clang \
+            cmake cpio curl device-tree-compiler dos2unix file flex \
+            g++-multilib gawk gcc-multilib genisoimage gettext git jq \
+            libbpf-dev libclang-dev libdw-dev libelf-dev libncurses-dev libssl-dev lld \
+            llvm ninja-build patch perl pkgconf python3 python3-cryptography \
+            python3-dev python3-packaging python3-pyelftools python3-setuptools qemu-utils rsync swig \
+            unzip wget xz-utils zlib1g-dev zstd
+
+          sudo timedatectl set-timezone "Asia/Shanghai"
+
+          sudo mkdir -p /mnt/build_wrt
+          sudo chown $USER:$USER /mnt/build_wrt
+          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
 
       - name: Initialization Values
+        id: initialize-values
         run: |
-          echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> "$GITHUB_ENV"
-          echo "WRT_MARK=$(echo "$GITHUB_REPOSITORY" | cut -d '/' -f 1)" >> "$GITHUB_ENV"
-          echo "WRT_VER=$(echo "$WRT_REPO" | cut -d '/' -f 4)-$WRT_BRANCH" >> "$GITHUB_ENV"
-          echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' "./Config/$WRT_CONFIG.txt" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_ENV"
-          echo "WRT_KVER=none" >> "$GITHUB_ENV"
-          echo "WRT_LIST=none" >> "$GITHUB_ENV"
-          echo "WRT_WIFI=none" >> "$GITHUB_ENV"
-          echo "WRT_NET=none" >> "$GITHUB_ENV"
-          echo "WRT_CI=$WRT_CI" >> "$GITHUB_ENV"
+          WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[^=_]+(?=\=y)' "./Config/$WRT_CONFIG.txt")
+          WRT_SUBTARGET=$(grep -m 1 -oP "^CONFIG_TARGET_${WRT_TARGET}_\K[^=_]+(?=\=y)" "./Config/$WRT_CONFIG.txt")
+          WRT_CACHE_SOURCE=${WRT_SOURCE//\//-}
+          WRT_CACHE_BRANCH=${WRT_BRANCH//\//-}
+          WRT_CACHE_TARGET="$WRT_TARGET-$WRT_SUBTARGET"
+          WRT_CACHE_PREFIX="wrt-$WRT_CACHE_SOURCE-$WRT_CACHE_BRANCH-$WRT_CACHE_TARGET"
+          WRT_WIFI=$(grep -oE 'WIFI-(YES|NO)$' <<< "${WRT_CONFIG^^}" || true); WRT_WIFI=${WRT_WIFI:-none}
 
-          if [ -z "$WRT_ARCH" ]; then
-            WRT_ARCH=$(sed -n 's/.*_DEVICE_\(.*\)_DEVICE_.*/\1/p' "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" | head -n 1)
-            echo "WRT_ARCH=$WRT_ARCH" >> "$GITHUB_ENV"
-          fi
-
-          echo "$WRT_REPO/$WRT_BRANCH" > "$GITHUB_WORKSPACE/repo_flag"
+          {
+            echo "WRT_INFO=${WRT_SOURCE%%/*}"
+            echo "WRT_MARK=${GITHUB_REPOSITORY%%/*}"
+            echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")"
+            echo "WRT_CACHE_PREFIX=$WRT_CACHE_PREFIX"
+            echo "WRT_CACHE_TARGET=$WRT_CACHE_TARGET"
+            echo "WRT_SUBTARGET=$WRT_SUBTARGET"
+            echo "WRT_TARGET=$WRT_TARGET"
+            echo "WRT_WIFI=$WRT_WIFI"
+            echo "WRT_KVER=none"
+            echo "WRT_LIST=none"
+          } >> "$GITHUB_ENV"
+          echo "cache_prefix=$WRT_CACHE_PREFIX" >> "$GITHUB_OUTPUT"
 
       - name: Clone Code
+        id: clone-code
         run: |
-          git clone \
-            --depth=1 \
-            --single-branch \
-            --branch "$WRT_BRANCH" \
-            "$WRT_REPO" \
-            ./wrt/
+          git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
 
           cd ./wrt/
-          echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> "$GITHUB_ENV"
+          WRT_HASH=$(git rev-parse HEAD)
+          echo "WRT_HASH=$WRT_HASH" >> $GITHUB_ENV
+          echo "WRT_CACHE_KEY=$WRT_CACHE_PREFIX-$WRT_HASH" >> $GITHUB_ENV
+          echo "cache_key=$WRT_CACHE_PREFIX-$WRT_HASH" >> "$GITHUB_OUTPUT"
 
-      - name: Update Dae and Daed Rules
-        run: |
-          cd ./wrt/
-
-          mkdir -p files/usr/share/dae
-
-          wget -O files/usr/share/dae/geoip.dat \
-            https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-
-          wget -O files/usr/share/dae/geosite.dat \
-            https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
-
-          cd files/usr/share/
-
-          rm -f daed
-          ln -s dae daed
-
-          ls -la
+          # GitHub Action 移除国内下载源
+          PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
+          if [ -f "$PROJECT_MIRRORS_FILE" ]; then
+            sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
+          fi
 
       - name: Check Scripts
         run: |
-          find ./ \
-            -maxdepth 3 \
-            -type f \
-            -iregex ".*\(txt\|sh\)$" \
-            -exec dos2unix {} \; \
-            -exec chmod +x {} \;
+          find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
 
-      - name: Cache Dependencies
-        uses: actions/cache@v4
+      - name: Restore Build Cache
+        id: cache-restore
+        if: ${{ !inputs.WRT_TEST }}
+        uses: actions/cache/restore@main
         with:
+          key: ${{env.WRT_CACHE_KEY}}
+          restore-keys: ${{env.WRT_CACHE_PREFIX}}-
           path: |
             ./wrt/.ccache
-            ./wrt/staging_dir
-          key: daed-web-ui-${{ env.WRT_ARCH }}-${{ hashFiles('**/repo_flag') }}-${{ env.WRT_DATE }}
-          restore-keys: |
-            daed-web-ui-${{ env.WRT_ARCH }}-${{ hashFiles('**/repo_flag') }}-
+            ./wrt/staging_dir/host*
+            ./wrt/staging_dir/tool*
 
-      - name: Refresh the Cache
+      - name: Prepare Restored Build Cache
+        if: ${{ !inputs.WRT_TEST && steps.cache-restore.outputs.cache-matched-key != '' }}
         run: |
-          if [ -d "./wrt/staging_dir" ]; then
-            find "./wrt/staging_dir" \
-              -type d \
-              -name "stamp" \
-              -not -path "*target*" |
-            while read -r dir; do
-              find "$dir" -type f -exec touch {} +
-            done
-          fi
+          find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
+            find "$DIR" -type f -exec touch {} +
+          done
+          mkdir -p ./wrt/tmp
+          echo "1" > ./wrt/tmp/.build
+          echo "restored build cache: ${{steps.cache-restore.outputs.cache-matched-key}}"
 
       - name: Update Feeds
         run: |
@@ -197,89 +174,76 @@ jobs:
 
       - name: Custom Packages
         run: |
-          cd ./wrt/package/
+          cd ./wrt/
 
-          "$GITHUB_WORKSPACE/Scripts/Packages.sh"
-          "$GITHUB_WORKSPACE/Scripts/Handles.sh"
+          $GITHUB_WORKSPACE/Scripts/Packages.sh
+          $GITHUB_WORKSPACE/Scripts/Handles.sh
+          $GITHUB_WORKSPACE/.github/scripts/prepare-i2c-tools.sh
 
       - name: Custom Settings
         run: |
-          . "$GITHUB_WORKSPACE/Scripts/function.sh"
-
           cd ./wrt/
 
-          generate_config
-          cat .config
+          if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
+          else
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
+          fi
 
-          "$GITHUB_WORKSPACE/Scripts/Settings.sh"
+          $GITHUB_WORKSPACE/Scripts/Settings.sh
+          $GITHUB_WORKSPACE/.github/scripts/prepare-build-host.sh
 
-          make defconfig -j"$(nproc)"
+          make defconfig -j$(nproc) && make clean -j$(nproc)
 
-          # ===== 编译前自检 =====
-          # 本 fork 的 qualcommax 有线网口走 DSA：kmod-dsa / kmod-dsa-qca8k
-          # + PHY 驱动 kmod-phy-aquantia / kmod-phy-qca83xx（见 target/linux/qualcommax/Makefile）。
-          # 这里确认它们仍然被选中——缺失才会导致“能启动、灯正常、网口全不通”。
-          echo "======== network driver check ========"
-          grep -E '^(# )?CONFIG_PACKAGE_(kmod-dsa|kmod-dsa-qca8k|kmod-phy-aquantia|kmod-phy-qca83xx|kmod-nss-wifi-drv)=' .config || echo "no DSA/PHY entries in .config"
-          echo "======================================"
-
-          for SYM in kmod-dsa kmod-dsa-qca8k kmod-phy-aquantia kmod-phy-qca83xx; do
-            if ! grep -q "^CONFIG_PACKAGE_${SYM}=y" .config; then
-              echo "::warning title=缺少 ${SYM}::.config 中未选中 ${SYM}，有线网口可能不通"
-            fi
-          done
-
-          make clean -j"$(nproc)"
-
-      - name: Clean Daed Build
+      - name: Prepare Rust Toolchain
+        if: ${{ !inputs.WRT_TEST }}
         run: |
           cd ./wrt/
 
-          rm -rf build_dir/target-*/daed-*
-          rm -rf tmp/info/.packageinfo-luci-app-daed*
-          rm -rf tmp/info/.packageauxvars-luci-app-daed*
-          rm -rf staging_dir/target-*/pkginfo/daed*
-          rm -rf staging_dir/target-*/root-*/stamp/.daed_installed
-
-          make package/luci-app-daed/daed/clean V=s
+          $GITHUB_WORKSPACE/.github/scripts/prepare-rust.sh
 
       - name: Download Packages
-        if: env.WRT_TEST != 'true'
+        if: ${{ !inputs.WRT_TEST }}
         run: |
           cd ./wrt/
 
-          make download -j"$(nproc)"
+          make download -j$(nproc)
 
       - name: Compile Firmware
-        if: env.WRT_TEST != 'true'
+        if: ${{ !inputs.WRT_TEST }}
         run: |
           cd ./wrt/
 
-          make -j"$(nproc)" || make -j1 V=s
+          mkdir -p $GITHUB_WORKSPACE/build-reports
+          make -j$(nproc) BUILD_TIME_LOG="$GITHUB_WORKSPACE/build-reports/parallel.tsv" || \
+            make -j1 V=s BUILD_TIME_LOG="$GITHUB_WORKSPACE/build-reports/serial.tsv"
 
-      - name: Delete Old Cache
+      - name: Collect Build Reports
+        if: ${{ !inputs.WRT_TEST && always() }}
+        continue-on-error: true
         run: |
-          gh cache list \
-            --key "daed-web-ui-${{ env.WRT_ARCH }}-${{ hashFiles('**/repo_flag') }}-" \
-            --json key \
-            --jq '.[] | .key' |
-            while read -r key; do
-              gh cache delete "$key"
-            done
+          cd ./wrt/
 
-          echo "======== cache status ========"
+          $GITHUB_WORKSPACE/.github/scripts/collect-build-reports.sh
 
-          if [ -d "./wrt/.ccache" ]; then
-            echo "ccache: $(du -sh ./wrt/.ccache | cut -f 1)"
-          else
-            echo "ccache: unavailable"
-          fi
+      - name: Upload Build Reports
+        if: ${{ !inputs.WRT_TEST && always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-reports-${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{github.run_attempt}}
+          path: ./build-reports/
+          retention-days: 7
 
-          if [ -d "./wrt/staging_dir" ]; then
-            echo "staging: $(du -sh ./wrt/staging_dir | cut -f 1)"
-          else
-            echo "staging: unavailable"
-          fi
+      - name: Save Build Cache
+        if: ${{ !inputs.WRT_TEST && success() && steps.cache-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@main
+        with:
+          key: ${{env.WRT_CACHE_KEY}}
+          path: |
+            ./wrt/.ccache
+            ./wrt/staging_dir/host*
+            ./wrt/staging_dir/tool*
 
       - name: Machine Information
         run: |
@@ -295,103 +259,92 @@ jobs:
 
       - name: Package Firmware
         run: |
-          cd ./wrt/
+          cd ./wrt/ && mkdir ./upload/
 
-          mkdir -p ./upload/
+          cp -f ./.config ./upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
 
-          cp -f \
-            ./.config \
-            "./upload/Config-$WRT_CONFIG-$WRT_VER-$WRT_DATE.txt"
+          if [[ "$WRT_TEST" != 'true' ]]; then
+            echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV
+            echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> $GITHUB_ENV
 
-          if [[ "$WRT_TEST" != "true" ]]; then
-            # 关键：按设备名挑选本机型的 manifest。
-            # 多机型构建时 bin/targets 下会有多份 *.manifest，
-            # 用 head -n 1 会读到别的机型的包清单，导致自检结论全错。
-            MANIFEST=$(find ./bin/targets/ -type f -name "*${WRT_ARCH}*.manifest" | head -n 1)
-            if [ -z "$MANIFEST" ]; then
-              MANIFEST=$(find ./bin/targets/ -type f -name "*.manifest" | head -n 1)
-            fi
-            echo "manifest: ${MANIFEST:-none}"
+            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
 
-            echo "WRT_KVER=$(grep -oP '^kernel - \K[\d\.]+' "$MANIFEST" 2>/dev/null | head -n 1)" >> "$GITHUB_ENV"
-
-            echo "WRT_LIST=$(grep -oP '^luci-(app|theme)[^ ]*' "$MANIFEST" 2>/dev/null | tr '\n' ' ')" >> "$GITHUB_ENV"
-
-            # ===== WiFi 自检 =====
-            if [ -n "$MANIFEST" ]; then
-              WIFI_WPAD=$(grep -oP '^wpad[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
-              WIFI_DRV=$(grep -oP '^kmod-ath1[0-9]k[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
-              WIFI_BDF=$(grep -oP '^ipq-wifi-[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
-              WIFI_UI=$(grep -oP '^luci-mod-network[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
-
-              if [ -n "$WIFI_WPAD" ]; then
-                echo "WRT_WIFI=✅ 已包含 | 认证端：${WIFI_WPAD:-无} | 驱动：${WIFI_DRV:-无} | 板级数据：${WIFI_BDF:-无} | 无线页面：${WIFI_UI:-无}" >> "$GITHUB_ENV"
-              else
-                echo "WRT_WIFI=❌ 未包含（无 wpad/hostapd，属无 WiFi 固件）" >> "$GITHUB_ENV"
-              fi
-            else
-              echo "WRT_WIFI=未知（未找到 manifest）" >> "$GITHUB_ENV"
-            fi
-
-            # ===== 有线网络自检（DSA）=====
-            if [ -n "$MANIFEST" ]; then
-              NET_PKGS=$(grep -oP '^(kmod-dsa[^ ]*|kmod-phy-[^ ]*|kmod-nss-wifi-drv)[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
-              if [ -z "$NET_PKGS" ]; then
-                echo "WRT_NET=⚠️ manifest 内未发现 DSA/PHY 驱动包" >> "$GITHUB_ENV"
-              else
-                echo "WRT_NET=${NET_PKGS}" >> "$GITHUB_ENV"
-              fi
-
-              echo "======== network check ========"
-              grep -E '^(kmod-dsa|kmod-phy-|kmod-nss-wifi-drv)' "$MANIFEST" || echo "no DSA/PHY driver package"
-              echo "==============================="
-            else
-              echo "WRT_NET=未知（未找到 manifest）" >> "$GITHUB_ENV"
-            fi
-
-            find ./bin/targets/ \
-              -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" \
-              -exec rm -rf {} +
-
-            for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*"); do
-              EXT=$(basename "$FILE" | cut -d '.' -f 2-)
-              NAME=$(basename "$FILE" | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
-              NEW_FILE="$WRT_VER-$NAME-$WRT_DATE.$EXT"
-
-              mv -f "$FILE" "./upload/$NEW_FILE"
+            for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
+              EXT=$(basename $FILE | cut -d '.' -f 2-)
+              NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
+              NEW_FILE="$NAME"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_WIFI"-"$WRT_DATE"."$EXT"
+              mv -f $FILE ./upload/$NEW_FILE
             done
 
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
 
-            make clean -j"$(nproc)"
+            make clean -j$(nproc)
           fi
 
       - name: Release Firmware
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@master
         with:
-          tag_name: ${{ env.CI_NAME }}-${{ env.WRT_CONFIG }}_${{ env.WRT_DATE }}
+          tag_name: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
           files: ./wrt/upload/*.*
           body: |
-            京东云亚瑟AX1800pro专属固件包
-            代码来自Davidtall、VIKINGYFY
-            适度精简，确保最大性能发挥，开启内核eBPF，Dae吃鹅优选，建议硬改1GB内存的使用
-            刷机前请更换分区表和uboot,参考链接: https://www.right.com.cn/forum/thread-8402269-1-1.html
-            全系带开源硬件加速。
+            这是个平台固件包，内含多个设备！
+            请注意选择你需要的设备固件！
+            不要问，刷就完事了！
 
-            源码：${{ env.WRT_REPO }}
-            分支：${{ env.WRT_BRANCH }}
-            提交：${{ env.WRT_HASH }}
+            全系带开源硬件加速，别问了！
 
-            配置：${{ env.WRT_CONFIG }}
-            平台：${{ env.WRT_TARGET }}
+            源码：${{env.WRT_REPO}}
+            分支：${{env.WRT_BRANCH}}
+            提交：${{env.WRT_HASH}}
 
-            登录地址：${{ env.WRT_IP }}
-            登录密码：${{ env.WRT_PW }}
+            配置：${{env.WRT_CONFIG}}
+            平台：${{env.WRT_TARGET}}
 
-            WIFI名称：${{ env.WRT_SSID }}
-            WIFI密码：${{ env.WRT_WORD }}
+            登录地址：${{env.WRT_IP}}
+            登录密码：${{env.WRT_PW}}
 
-            内核版本：${{ env.WRT_KVER }}
-            WiFi 状态：${{ env.WRT_WIFI }}
-            网络驱动：${{ env.WRT_NET }}
-            插件列表：${{ env.WRT_LIST }}
+            WIFI名称：${{env.WRT_SSID}}
+            WIFI密码：${{env.WRT_WORD}}
+
+            内核版本：${{env.WRT_KVER}}
+            插件列表：${{env.WRT_LIST}}
+
+  cache-rollover:
+    name: Roll cache generations
+    needs: core
+    if: ${{ !inputs.WRT_TEST && needs.core.result == 'success' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: wrt-cache-rollover-${{github.ref}}-${{needs.core.outputs.cache_prefix}}
+      cancel-in-progress: false
+    env:
+      GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      GH_REPO: ${{github.repository}}
+      WRT_CACHE_PREFIX: ${{needs.core.outputs.cache_prefix}}
+      WRT_CACHE_KEY: ${{needs.core.outputs.cache_key}}
+    steps:
+      - name: Roll Build Cache
+        run: |
+          set -euo pipefail
+
+          CURRENT_CACHE_KEYS=$(gh cache list --repo "$GH_REPO" --key "$WRT_CACHE_KEY" --ref "$GITHUB_REF" --limit 100 --json key --jq '.[].key')
+          CURRENT_CACHE_FOUND=0
+          while IFS= read -r CACHE_KEY; do
+            if [ "$CACHE_KEY" = "$WRT_CACHE_KEY" ]; then
+              CURRENT_CACHE_FOUND=1
+              break
+            fi
+          done <<< "$CURRENT_CACHE_KEYS"
+
+          if [ "$CURRENT_CACHE_FOUND" -ne 1 ]; then
+            echo "skip cache rollover: current cache is not available yet"
+            exit 0
+          fi
+
+          gh cache list --repo "$GH_REPO" --key "$WRT_CACHE_PREFIX-" --ref "$GITHUB_REF" --limit 100 --json id,key --jq '.[] | [.id, .key] | @tsv' |
+            while IFS=$'\t' read -r CACHE_ID CACHE_KEY; do
+              [ -n "$CACHE_ID" ] || continue
+              [ "$CACHE_KEY" = "$WRT_CACHE_KEY" ] && continue
+              gh cache delete "$CACHE_ID" --repo "$GH_REPO" ||
+                echo "warning: failed to delete cache $CACHE_ID ($CACHE_KEY)"
+            done
