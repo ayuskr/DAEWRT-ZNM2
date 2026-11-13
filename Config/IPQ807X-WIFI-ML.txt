@@ -1,11 +1,17 @@
 # ============================================================
 # Redmi AX6 / IPQ807x —— 主线源码专用配置
 #
-# 背景：VIKINGYFY/immortalwrt（owrt 分支）重写了 qca_edma / qca_ppe 与 DSA
-# tagger，其 ipq807x 有线数据面在 AX6 上不通（链路能协商 1Gbps，
-# br-lan 已内置写死 lan1~lan3、静态也 ping 不通，配置层已排除）。
-# 因此 AX6 改用 immortalwrt/immortalwrt 主线源码（与 kwrt 同源，实测可用），
-# ZN-M2 继续使用 fork（NSS/PPE 定制）。
+# 【重要：分区表】
+# 本机实测运行中的可用固件为「Redmi AX6 (stock layout)」，
+# 即原厂分区表（U-Boot 带 web 恢复页，但仍保留 stock 布局）。
+# 因此必须编译 -stock 变体（DTS: ipq8071-ax6-stock.dts）。
+#
+# 此前多次编译的 redmi_ax6（扩展分区表，DTS: ipq8071-ax6.dts）刷入后
+# 表现为：蓝灯常亮、链路协商 1Gbps、但 br-lan 无端口、拿不到 DHCP、
+# 静态 IP 也 ping 不通——根因是布局/DTS 不匹配。
+#
+# 源码选用说明：fork（VIKINGYFY/immortalwrt）重写了 qca_edma / qca_ppe
+# 与 DSA tagger；本机验证可用的是 immortalwrt 主线（与 kwrt 同源）。
 #
 # 机型列表必须显式排他：GENERAL.txt 里 MULTI_PROFILE=y，
 # 未列出的机型会按默认值进入构建，导致产物混乱。
@@ -45,8 +51,12 @@ CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_netgear_wax620=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_netgear_wax630=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_prpl_haze=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_qnap_301w=n
-CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_redmi_ax6=y
-CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_redmi_ax6-stock=n
+
+# 本机为原厂分区表：只编 -stock，扩展分区表变体必须关闭，
+# 否则产物里的 redmi_ax6 会被误刷（这正是此前故障的根因）。
+CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_redmi_ax6=n
+CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_redmi_ax6-stock=y
+
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_spectrum_sax1v1k=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_tcl_linkhub-hh500v=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_tplink_deco-x80-5g=n
