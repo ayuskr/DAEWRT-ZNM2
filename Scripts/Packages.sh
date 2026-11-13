@@ -1,339 +1,142 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 VIKINGYFY
 
-set -e
-
-export GIT_TERMINAL_PROMPT=0
-
+#安装和更新软件包
 UPDATE_PACKAGE() {
-	local PKG_NAME="$1"
-	local PKG_REPO="$2"
-	local PKG_BRANCH="$3"
-	local PKG_SPECIAL="${4:-}"
-	local PKG_EXTRA_NAMES="${5:-}"
-	local PKG_REQUIRED="${6:-true}"
-	local REPO_NAME="${PKG_REPO#*/}"
-	local REPO_URL="https://github.com/${PKG_REPO}.git"
-	local PKG_LIST=("$PKG_NAME")
-	local NAME
-	local DIR
-	local FOUND_DIRS
-	local SOURCE_DIR
-	local PACKAGE_DIR
+	local PKG_NAME=$1
+	local PKG_REPO=$2
+	local PKG_BRANCH=$3
+	local PKG_SPECIAL=$4
+	local PKG_LIST=("$PKG_NAME" $5)  # 第5个参数为自定义名称列表
+	local REPO_NAME=${PKG_REPO#*/}
+	local REPO_PATH="./package/$REPO_NAME"
 
-	if [ -n "$PKG_EXTRA_NAMES" ]; then
-		local EXTRA_NAMES
-		read -r -a EXTRA_NAMES <<< "$PKG_EXTRA_NAMES"
-		PKG_LIST+=("${EXTRA_NAMES[@]}")
-	fi
+	echo " "
 
-	echo
-	echo "Preparing package: $PKG_NAME"
-	echo "Repository: $REPO_URL"
-	echo "Branch: $PKG_BRANCH"
-
-	if ! git ls-remote \
-		--exit-code \
-		--heads \
-		"$REPO_URL" \
-		"$PKG_BRANCH" >/dev/null 2>&1; then
-
-		if [ "$PKG_REQUIRED" = "true" ]; then
-			echo "ERROR: Required repository or branch is unavailable."
-			echo "Repository: $REPO_URL"
-			echo "Branch: $PKG_BRANCH"
-			exit 1
-		fi
-
-		echo "WARNING: Optional repository or branch is unavailable."
-		echo "Repository: $REPO_URL"
-		echo "Branch: $PKG_BRANCH"
-		echo "Skipping optional package: $PKG_NAME"
-		return 0
-	fi
-
+	# 删除本地可能存在的不同名称的软件包
 	for NAME in "${PKG_LIST[@]}"; do
+		# 查找匹配的目录
 		echo "Search directory: $NAME"
+		local FOUND_DIRS=$(find ./feeds/luci/ ./feeds/packages/ -maxdepth 3 -type d -iname "*$NAME*" 2>/dev/null)
 
-		FOUND_DIRS=$(find \
-			../feeds/luci/ \
-			../feeds/packages/ \
-			-maxdepth 3 \
-			-type d \
-			-iname "*$NAME*" \
-			2>/dev/null || true)
-
+		# 删除找到的目录
 		if [ -n "$FOUND_DIRS" ]; then
-			while IFS= read -r DIR; do
-				[ -n "$DIR" ] || continue
-
+			while read -r DIR; do
 				rm -rf "$DIR"
 				echo "Delete directory: $DIR"
 			done <<< "$FOUND_DIRS"
 		else
-			echo "Not found directory: $NAME"
+			echo "Not fonud directory: $NAME"
 		fi
 	done
 
-	if [ "$PKG_SPECIAL" = "pkg" ]; then
-		SOURCE_DIR=$(mktemp -d "./.source-${REPO_NAME}.XXXXXX")
+	# 克隆 GitHub 仓库
+	git clone --depth=1 --single-branch --branch $PKG_BRANCH "https://github.com/$PKG_REPO.git" $REPO_PATH
 
-		git clone \
-			--depth=1 \
-			--single-branch \
-			--branch "$PKG_BRANCH" \
-			"$REPO_URL" \
-			"$SOURCE_DIR"
+	# 处理克隆的仓库
+	if [[ "$PKG_SPECIAL" == "pkg" ]]; then
+		find $REPO_PATH/*/ -maxdepth 3 -type d -iname "*$PKG_NAME*" -prune -exec cp -rf {} ./package \;
+		rm -rf $REPO_PATH
+	fi
+}
 
-		for NAME in "${PKG_LIST[@]}"; do
-			PACKAGE_DIR=$(find "$SOURCE_DIR" \
-				-mindepth 1 \
-				-maxdepth 4 \
-				-type d \
-				-name "$NAME" \
-				-print \
-				-quit)
+# 调用示例
+# UPDATE_PACKAGE "OpenAppFilter" "destan19/OpenAppFilter" "master" "" "custom_name1 custom_name2"
+# UPDATE_PACKAGE "open-app-filter" "destan19/OpenAppFilter" "master" "" "luci-app-appfilter oaf" 这样会把原有的open-app-filter，luci-app-appfilter，oaf相关组件删除，不会出现coremark错误。
 
-			if [ -z "$PACKAGE_DIR" ] || [ ! -f "$PACKAGE_DIR/Makefile" ]; then
-				echo "ERROR: Package directory or Makefile not found: $NAME"
-				rm -rf "$SOURCE_DIR"
+# UPDATE_PACKAGE "包名" "项目地址" "项目分支" "pkg，可选，从大杂烩中单独提取包名插件"
+UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
+UPDATE_PACKAGE "aurora" "eamonxg/luci-theme-aurora" "master"
+UPDATE_PACKAGE "aurora-config" "eamonxg/luci-app-aurora-config" "master"
+UPDATE_PACKAGE "fluent" "LazuliKao/luci-theme-fluent" "main"
+UPDATE_PACKAGE "footstrap" "VizzleTF/luci-theme-footstrap" "main"
+UPDATE_PACKAGE "kucat" "sirpdboy/luci-theme-kucat" "master"
+UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
+UPDATE_PACKAGE "shadcn" "eamonxg/luci-theme-shadcn" "main"
+UPDATE_PACKAGE "vantage" "anothaDev/luci-theme-vantage" "main"
 
-				if [ "$PKG_REQUIRED" = "true" ]; then
-					exit 1
-				fi
+UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
+UPDATE_PACKAGE "nikki" "nikkinikki-org/OpenWrt-nikki" "main"
+UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "dev" "pkg"
+UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
+UPDATE_PACKAGE "passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
 
-				return 0
-			fi
+UPDATE_PACKAGE "diskmanager" "4IceG/luci-app-mini-diskmanager" "main"
+UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"
+UPDATE_PACKAGE "qmodem" "FUjr/QModem" "main"
+UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "axonhub gecoosac miniupnpd sing-box luci-app-homeproxy luci-app-timewol luci-app-upnp luci-app-wolplus luci-app-wolultra"
 
-			rm -rf "./$NAME"
-			cp -a "$PACKAGE_DIR" "./$NAME"
+UPDATE_PACKAGE "diskman" "sbwml/luci-app-diskman" "main"
+UPDATE_PACKAGE "mosdns" "sbwml/luci-app-mosdns" "v5" "" "v2dat"
+UPDATE_PACKAGE "openlist2" "sbwml/luci-app-openlist2" "main"
+UPDATE_PACKAGE "qbittorrent" "sbwml/luci-app-qbittorrent" "master" "" "qt6base qt6tools rblibtorrent"
+UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main"
 
-			echo "Copy package directory: $PACKAGE_DIR -> ./$NAME"
-		done
+UPDATE_PACKAGE "ddns-go" "sirpdboy/luci-app-ddns-go" "main"
+UPDATE_PACKAGE "netspeedtest" "sirpdboy/netspeedtest" "main" "" "homebox ookla-speedtest"
+UPDATE_PACKAGE "netwizard" "sirpdboy/luci-app-netwizard" "main"
+UPDATE_PACKAGE "partexp" "sirpdboy/luci-app-partexp" "main"
+UPDATE_PACKAGE "timecontrol" "sirpdboy/luci-app-timecontrol" "main"
 
-		rm -rf "$SOURCE_DIR"
+UPDATE_PACKAGE "natmapt" "muink/openwrt-natmapt" "master"
+UPDATE_PACKAGE "stuntman" "muink/openwrt-stuntman" "master"
+UPDATE_PACKAGE "luci-app-natmapt" "muink/luci-app-natmapt" "master"
 
-	elif [ "$PKG_SPECIAL" = "name" ]; then
-		SOURCE_DIR=$(mktemp -d "./.source-${REPO_NAME}.XXXXXX")
+UPDATE_PACKAGE "airpi3000m-fancontrol" "LianXia233/luci-app-airpi3000m-fancontrol" "main"
+UPDATE_PACKAGE "chfs" "LianXia233/luci-app-chfs" "main"
+UPDATE_PACKAGE "fm350" "LianXia233/luci-app-fm350" "main"
+UPDATE_PACKAGE "h5000m-netmode" "LianXia233/luci-app-h5000m-netmode" "main"
+UPDATE_PACKAGE "mt5700" "LianXia233/luci-app-mt5700" "main"
+UPDATE_PACKAGE "mt5700m" "LianXia233/luci-app-mt5700m" "main"
+UPDATE_PACKAGE "netmonitor" "LianXia233/luci-app-netmonitor" "main"
+UPDATE_PACKAGE "qmodem-generic" "LianXia233/luci-app-qmodem-generic" "main"
 
-		git clone \
-			--depth=1 \
-			--single-branch \
-			--branch "$PKG_BRANCH" \
-			"$REPO_URL" \
-			"$SOURCE_DIR"
+#更新软件包版本
+UPDATE_VERSION() {
+	local PKG_NAME=$1
+	local PKG_MARK=${2:-false}
+	local PKG_FILES=$(find ./package/ ./feeds/packages/ -maxdepth 3 -type f -wholename "*/$PKG_NAME/Makefile")
 
-		if [ ! -f "$SOURCE_DIR/Makefile" ]; then
-			echo "ERROR: Package Makefile not found in repository root:"
-			echo "$PKG_REPO"
-			rm -rf "$SOURCE_DIR"
+	if [ -z "$PKG_FILES" ]; then
+		echo "$PKG_NAME not found!"
+		return
+	fi
 
-			if [ "$PKG_REQUIRED" = "true" ]; then
-				exit 1
-			fi
+	echo -e "\n$PKG_NAME version update has started!"
 
-			return 0
+	for PKG_FILE in $PKG_FILES; do
+		local PKG_REPO=$(grep -Po "PKG_SOURCE_URL:=https://.*github.com/\K[^/]+/[^/]+(?=.*)" $PKG_FILE)
+		local PKG_TAG=$(curl -sL "https://api.github.com/repos/$PKG_REPO/releases" | jq -r "map(select(.prerelease == $PKG_MARK)) | first | .tag_name")
+
+		local OLD_VER=$(grep -Po "PKG_VERSION:=\K.*" "$PKG_FILE")
+		local OLD_URL=$(grep -Po "PKG_SOURCE_URL:=\K.*" "$PKG_FILE")
+		local OLD_FILE=$(grep -Po "PKG_SOURCE:=\K.*" "$PKG_FILE")
+		local OLD_HASH=$(grep -Po "PKG_HASH:=\K.*" "$PKG_FILE")
+
+		local PKG_URL=$([[ "$OLD_URL" == *"releases"* ]] && echo "${OLD_URL%/}/$OLD_FILE" || echo "${OLD_URL%/}")
+
+		local NEW_VER=$(echo $PKG_TAG | sed -E 's/[^0-9]+/\./g; s/^\.|\.$//g')
+		local NEW_URL=$(echo $PKG_URL | sed "s/\$(PKG_VERSION)/$NEW_VER/g; s/\$(PKG_NAME)/$PKG_NAME/g")
+		local NEW_HASH=$(curl -sL "$NEW_URL" | sha256sum | cut -d ' ' -f 1)
+
+		echo "old version: $OLD_VER $OLD_HASH"
+		echo "new version: $NEW_VER $NEW_HASH"
+
+		if [[ "$NEW_VER" =~ ^[0-9].* ]] && dpkg --compare-versions "$OLD_VER" lt "$NEW_VER"; then
+			sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$NEW_VER/g" "$PKG_FILE"
+			sed -i "s/PKG_HASH:=.*/PKG_HASH:=$NEW_HASH/g" "$PKG_FILE"
+			echo "$PKG_FILE version has been updated!"
+		else
+			echo "$PKG_FILE version is already the latest!"
 		fi
-
-		rm -rf "./$PKG_NAME"
-		mv "$SOURCE_DIR" "./$PKG_NAME"
-
-		echo "Package directory prepared: ./$PKG_NAME"
-
-	else
-		rm -rf "$REPO_NAME"
-
-		git clone \
-			--depth=1 \
-			--single-branch \
-			--branch "$PKG_BRANCH" \
-			"$REPO_URL" \
-			"$REPO_NAME"
-
-		echo "Repository directory prepared: ./$REPO_NAME"
-	fi
+	done
 }
 
-PATCH_DAED_MAKEFILE() {
-	local DAED_MAKEFILE="./luci-app-daed/daed/Makefile"
-	local PREPARE_BLOCK
+#UPDATE_VERSION "软件包名" "测试版，true，可选，默认为否"
+#UPDATE_VERSION "sing-box"
 
-	if [ ! -f "$DAED_MAKEFILE" ]; then
-		echo "ERROR: Daed Makefile not found:"
-		echo "$DAED_MAKEFILE"
-		exit 1
-	fi
-
-	if ! grep -q '^GO_PKG_TAGS:=embedallowed,trace$' "$DAED_MAKEFILE"; then
-		echo "ERROR: Daed Web UI embedding is disabled."
-		echo "Expected: GO_PKG_TAGS:=embedallowed,trace"
-		exit 1
-	fi
-
-	if ! grep -q 'git clone https://github.com/daeuniverse/dae-wing $(PKG_BUILD_DIR)' \
-		"$DAED_MAKEFILE"; then
-		echo "ERROR: Expected dae-wing clone command was not found."
-		exit 1
-	fi
-
-	if ! grep -q 'pnpm install ;' "$DAED_MAKEFILE"; then
-		echo "ERROR: Expected pnpm install command was not found."
-		exit 1
-	fi
-
-	if ! grep -q 'pnpm build --filter daed ;' "$DAED_MAKEFILE"; then
-		echo "ERROR: Expected Daed frontend build command was not found."
-		echo "Expected: pnpm build --filter daed ;"
-		exit 1
-	fi
-
-	if ! grep -q 'apps/web/dist' "$DAED_MAKEFILE"; then
-		echo "ERROR: Daed Makefile does not contain apps/web/dist."
-		exit 1
-	fi
-
-	# Clean the target directory before cloning dae-wing.
-	sed -i \
-		's@\t\t\tgit clone https://github.com/daeuniverse/dae-wing $(PKG_BUILD_DIR) && \\@\t\t\trm -rf $(PKG_BUILD_DIR) ; \\@' \
-		"$DAED_MAKEFILE"
-
-	sed -i \
-		'/^[[:space:]]*rm -rf $(PKG_BUILD_DIR) ; \\$/a\
-			git clone https://github.com/daeuniverse/dae-wing $(PKG_BUILD_DIR) \&\& \\' \
-		"$DAED_MAKEFILE"
-
-	# Disable pnpm frozen-lockfile mode.
-	sed -i \
-		's@\t\t\tpnpm install ; \\@\t\t\tpnpm install --no-frozen-lockfile ; \\@' \
-		"$DAED_MAKEFILE"
-
-	# Verify the Daed frontend output.
-	sed -i \
-		's@\t\t\tpnpm build --filter daed ; \\@\t\t\tpnpm build --filter daed ; \\\
-			test -d apps/web/dist ; \\\
-			find apps/web/dist -type f -print -quit | grep -q . ; \\@' \
-		"$DAED_MAKEFILE"
-
-	# Stop immediately if a Build/Prepare command fails.
-	sed -i \
-		'/^define Build\/Prepare$/,/^endef$/ s/^[[:space:]]*( \\$/\t( set -e; \\/' \
-		"$DAED_MAKEFILE"
-
-	PREPARE_BLOCK=$(sed -n \
-		'/^define Build\/Prepare$/,/^endef$/p' \
-		"$DAED_MAKEFILE")
-
-	if ! grep -q 'rm -rf $(PKG_BUILD_DIR)' <<< "$PREPARE_BLOCK"; then
-		echo "ERROR: Failed to add dae-wing directory cleanup."
-		exit 1
-	fi
-
-	if ! grep -q 'git clone https://github.com/daeuniverse/dae-wing $(PKG_BUILD_DIR)' \
-		<<< "$PREPARE_BLOCK"; then
-		echo "ERROR: The dae-wing clone command was lost while patching."
-		exit 1
-	fi
-
-	if ! grep -q 'pnpm install --no-frozen-lockfile' <<< "$PREPARE_BLOCK"; then
-		echo "ERROR: Failed to disable pnpm frozen-lockfile."
-		exit 1
-	fi
-
-	if ! grep -q 'pnpm build --filter daed' <<< "$PREPARE_BLOCK"; then
-		echo "ERROR: The Daed frontend build command was lost."
-		exit 1
-	fi
-
-	if ! grep -q 'find apps/web/dist -type f -print -quit | grep -q .' \
-		<<< "$PREPARE_BLOCK"; then
-		echo "ERROR: Failed to add the Daed frontend output check."
-		exit 1
-	fi
-
-	if ! grep -q 'set -e;' <<< "$PREPARE_BLOCK"; then
-		echo "ERROR: Failed to enable error checking in Build/Prepare."
-		exit 1
-	fi
-
-	echo "Daed Makefile patched successfully."
-	echo "Web UI embedding: enabled"
-	echo "Frontend build command: pnpm build --filter daed"
-	echo "PNPM lockfile mode: no-frozen-lockfile"
-	echo "Frontend output check: enabled"
-}
-
-# Remove potentially conflicting packages.
-rm -rf ../feeds/luci/applications/luci-app-passwall*
-rm -rf ../feeds/luci/applications/luci-app-mosdns*
-rm -rf ../feeds/luci/applications/luci-app-dockerman*
-rm -rf ../feeds/luci/applications/luci-app-dae*
-rm -rf ../feeds/luci/applications/luci-app-bypass*
-rm -rf ../feeds/packages/net/dae*
-
-# Remove old theme packages.
-rm -rf ../feeds/luci/themes/luci-theme-argon
-rm -rf ../feeds/luci/themes/luci-theme-aurora
-rm -rf ../feeds/luci/themes/luci-theme-glass
-
-# Daed
-UPDATE_PACKAGE \
-	"luci-app-daed" \
-	"QiuSimons/luci-app-daed" \
-	"kix" \
-	"" \
-	"" \
-	"true"
-
-PATCH_DAED_MAKEFILE
-
-# Lucky
-UPDATE_PACKAGE \
-	"luci-app-lucky" \
-	"gdy666/luci-app-lucky" \
-	"main" \
-	"" \
-	"lucky" \
-	"true"
-
-# Glass
-UPDATE_PACKAGE \
-	"luci-theme-glass" \
-	"rchen14b/luci-theme-glass" \
-	"main" \
-	"" \
-	"glass" \
-	"true"
-
-# Vantage theme and companion application.
-UPDATE_PACKAGE \
-	"luci-theme-vantage" \
-	"anothaDev/luci-theme-vantage" \
-	"main" \
-	"pkg" \
-	"luci-app-vantage" \
-	"true"
-
-# Material Design 3
-UPDATE_PACKAGE \
-	"luci-theme-material3" \
-	"KawaiiHachimi/luci-theme-material3" \
-	"main" \
-	"name" \
-	"" \
-	"true"
-
-# Check that the theme packages exist before continuing.
-for REQUIRED_PACKAGE in \
-	"luci-theme-vantage" \
-	"luci-app-vantage" \
-	"luci-theme-material3"; do
-
-	if [ ! -f "./$REQUIRED_PACKAGE/Makefile" ]; then
-		echo "ERROR: Required package Makefile is missing:"
-		echo "./$REQUIRED_PACKAGE/Makefile"
-		exit 1
-	fi
-
-	echo "Verified package: $REQUIRED_PACKAGE"
-done
-
-echo "Custom theme package verification completed successfully."
+#引入私有扩展脚本
+if [ -f "$GITHUB_WORKSPACE/Scripts/PRIVATE.sh" ]; then
+	source "$GITHUB_WORKSPACE/Scripts/PRIVATE.sh"
+fi
