@@ -183,9 +183,9 @@ jobs:
               -type d \
               -name "stamp" \
               -not -path "*target*" |
-              while read -r dir; do
-                find "$dir" -type f -exec touch {} +
-              done
+            while read -r dir; do
+              find "$dir" -type f -exec touch {} +
+            done
           fi
 
       - name: Update Feeds
@@ -215,21 +215,19 @@ jobs:
 
           make defconfig -j"$(nproc)"
 
-          # ===== 编译前自检：以太网驱动是否真的被选中 =====
-          # 背景：qualcommax 的有线网口依赖 NSS 栈里的驱动包（如 kmod-qca-nss-dp）。
-          # 如果 NSS 选型被写乱（例如固件版本 choice 同时出现多个 =y），
-          # 这些包会被 defconfig 静默丢弃，导致“能启动、灯正常、网口全不通”。
-          # 在这里提前暴露，避免白跑两小时。
+          # ===== 编译前自检 =====
+          # 本 fork 的 qualcommax 有线网口走 DSA：kmod-dsa / kmod-dsa-qca8k
+          # + PHY 驱动 kmod-phy-aquantia / kmod-phy-qca83xx（见 target/linux/qualcommax/Makefile）。
+          # 这里确认它们仍然被选中——缺失才会导致“能启动、灯正常、网口全不通”。
           echo "======== network driver check ========"
-          grep -E '^(# )?CONFIG_(PACKAGE_)?(kmod-qca-nss-dp|kmod-nss-dp|kmod-qca-ssdk|kmod-dsa|kmod-nss-wifi-drv|NSS_FIRMWARE_VERSION)' .config || echo "no qualcomm network/NSS entries in .config"
+          grep -E '^(# )?CONFIG_PACKAGE_(kmod-dsa|kmod-dsa-qca8k|kmod-phy-aquantia|kmod-phy-qca83xx|kmod-nss-wifi-drv)=' .config || echo "no DSA/PHY entries in .config"
           echo "======================================"
 
-          NET_DRV=$(grep -cE '^CONFIG_PACKAGE_(kmod-qca-nss-dp|kmod-nss-dp|kmod-qca-ssdk)=y' .config || true)
-          if [ "${NET_DRV:-0}" -eq 0 ]; then
-            echo "::warning title=无高通以太网驱动::.config 中未选中 kmod-qca-nss-dp / kmod-nss-dp / kmod-qca-ssdk，刷机后有线网口可能不通"
-          else
-            echo "network driver selected: ${NET_DRV} 项"
-          fi
+          for SYM in kmod-dsa kmod-dsa-qca8k kmod-phy-aquantia kmod-phy-qca83xx; do
+            if ! grep -q "^CONFIG_PACKAGE_${SYM}=y" .config; then
+              echo "::warning title=缺少 ${SYM}::.config 中未选中 ${SYM}，有线网口可能不通"
+            fi
+          done
 
           make clean -j"$(nproc)"
 
@@ -306,11 +304,18 @@ jobs:
             "./upload/Config-$WRT_CONFIG-$WRT_VER-$WRT_DATE.txt"
 
           if [[ "$WRT_TEST" != "true" ]]; then
-            MANIFEST=$(find ./bin/targets/ -type f -name "*.manifest" | head -n 1)
+            # 关键：按设备名挑选本机型的 manifest。
+            # 多机型构建时 bin/targets 下会有多份 *.manifest，
+            # 用 head -n 1 会读到别的机型的包清单，导致自检结论全错。
+            MANIFEST=$(find ./bin/targets/ -type f -name "*${WRT_ARCH}*.manifest" | head -n 1)
+            if [ -z "$MANIFEST" ]; then
+              MANIFEST=$(find ./bin/targets/ -type f -name "*.manifest" | head -n 1)
+            fi
+            echo "manifest: ${MANIFEST:-none}"
 
-            echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> "$GITHUB_ENV"
+            echo "WRT_KVER=$(grep -oP '^kernel - \K[\d\.]+' "$MANIFEST" 2>/dev/null | head -n 1)" >> "$GITHUB_ENV"
 
-            echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> "$GITHUB_ENV"
+            echo "WRT_LIST=$(grep -oP '^luci-(app|theme)[^ ]*' "$MANIFEST" 2>/dev/null | tr '\n' ' ')" >> "$GITHUB_ENV"
 
             # ===== WiFi 自检 =====
             if [ -n "$MANIFEST" ]; then
@@ -328,17 +333,17 @@ jobs:
               echo "WRT_WIFI=未知（未找到 manifest）" >> "$GITHUB_ENV"
             fi
 
-            # ===== 以太网驱动自检 =====
+            # ===== 有线网络自检（DSA）=====
             if [ -n "$MANIFEST" ]; then
-              NET_PKGS=$(grep -oP '^(kmod-qca-nss-dp|kmod-nss-dp|kmod-qca-ssdk|kmod-nss-wifi-drv|kmod-dsa[^ ]*)[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
+              NET_PKGS=$(grep -oP '^(kmod-dsa[^ ]*|kmod-phy-[^ ]*|kmod-nss-wifi-drv)[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
               if [ -z "$NET_PKGS" ]; then
-                echo "WRT_NET=⚠️ manifest 内未发现 qca-nss-dp/ssdk 等包（可能为内核内置驱动）" >> "$GITHUB_ENV"
+                echo "WRT_NET=⚠️ manifest 内未发现 DSA/PHY 驱动包" >> "$GITHUB_ENV"
               else
                 echo "WRT_NET=${NET_PKGS}" >> "$GITHUB_ENV"
               fi
 
               echo "======== network check ========"
-              grep -E '^(kmod-qca-nss|kmod-nss|kmod-qca-ssdk|kmod-dsa)' "$MANIFEST" || echo "no explicit ethernet driver package"
+              grep -E '^(kmod-dsa|kmod-phy-|kmod-nss-wifi-drv)' "$MANIFEST" || echo "no DSA/PHY driver package"
               echo "==============================="
             else
               echo "WRT_NET=未知（未找到 manifest）" >> "$GITHUB_ENV"
