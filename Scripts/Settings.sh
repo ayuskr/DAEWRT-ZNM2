@@ -16,15 +16,69 @@ if [ -n "$FLASH_JS" ]; then
 	sed -i "s/192\.168\.[0-9]*\.[0-9]*/$WRT_IP/g" $FLASH_JS
 fi
 
-# 说明：不再向 LuCI 状态页追加 " / DaeWRT-<日期>" 之类的编译者标识，
-# 固件版本保持上游原样（ImmortalWrt SNAPSHOT rX-xxxxxxx / LuCI Master ...）。
-
 # 修改默认 IP 地址和主机名。
 CFG_FILE="./package/base-files/files/bin/config_generate"
 
 if [ -f "$CFG_FILE" ]; then
 	sed -i "s/192\.168\.[0-9]*\.[0-9]*/$WRT_IP/g" "$CFG_FILE"
 	sed -i "s/hostname='.*'/hostname='$WRT_NAME'/g" "$CFG_FILE"
+fi
+
+# 说明：不再向 LuCI 状态页追加 " / DaeWRT-<日期>" 之类的编译者标识，
+# 固件版本保持上游原样（ImmortalWrt SNAPSHOT rX-xxxxxxx / LuCI Master ...）。
+
+# ============================================================
+# ipq807x（Redmi AX6）：内置 /etc/config/network
+#
+# 现象：刷入后链路已协商到 1Gbps（PHY 正常），但 br-lan 里没有端口，
+#       电脑拿不到 DHCP、静态 IP 也 ping 不通 10.0.0.1。
+# 说明 board_detect -> board.json -> config_generate 这条链在 AX6 上没有
+# 生成正确的 LAN 桥。这里直接写死配置，让网络不再依赖板级探测结果。
+#
+# 端口名取自 dts/ipq8071-xiaomi.dtsi：wan / lan1 / lan2 / lan3（DSA）。
+# config_generate 只在 /etc/config/network 为空时才会生成，
+# 因此内置此文件后它只负责补 /etc/config/system（主机名、LED 等）。
+# ============================================================
+if [[ "$(target_subtarget)" == "ipq807x" ]]; then
+	echo "内置 /etc/config/network（ipq807x：br-lan = lan1 lan2 lan3）"
+
+	mkdir -p ./files/etc/config
+
+	cat > ./files/etc/config/network <<EOF
+config interface 'loopback'
+	option device 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config globals 'globals'
+	option ula_prefix 'auto'
+	option dhcp_default_duid 'auto'
+
+config device
+	option name 'br-lan'
+	option type 'bridge'
+	list ports 'lan1'
+	list ports 'lan2'
+	list ports 'lan3'
+
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'static'
+	option ipaddr '$WRT_IP'
+	option netmask '255.255.255.0'
+	option ip6assign '60'
+
+config interface 'wan'
+	option device 'wan'
+	option proto 'dhcp'
+
+config interface 'wan6'
+	option device 'wan'
+	option proto 'dhcpv6'
+EOF
+
+	cat ./files/etc/config/network
 fi
 
 # 将 Glass 设置为 LuCI 默认主题。
@@ -93,8 +147,7 @@ fi
 # 高通 NSS 配置：仅为 ipq60xx（ZN-M2）调参，必须按子平台分流。
 # 这段以前对 *QUALCOMMAX* 无条件追加，会把 NSS 固件版本钉成 12_5，
 # 与 function.sh 中 ipq60xx 路径的 12_2 冲突；
-# 而且 ipq807x 的有线网口依赖 qca-nss-dp，选型被搅乱后会出现
-# “能启动、灯正常、但所有网口不通”的故障（AX6 已实测到）。
+# 而 ipq807x 的默认选型也会被搅乱，因此只在 ipq60xx 上应用。
 if [[ "$(target_subtarget)" == "ipq60xx" ]]; then
 	echo "应用 NSS 配置：$(target_subtarget)"
 	echo "CONFIG_FEED_nss_packages=n" >> ./.config
@@ -102,9 +155,6 @@ if [[ "$(target_subtarget)" == "ipq60xx" ]]; then
 	echo "CONFIG_NSS_FIRMWARE_VERSION_11_4=n" >> ./.config
 	echo "CONFIG_NSS_FIRMWARE_VERSION_12_5=y" >> ./.config
 	echo "CONFIG_PACKAGE_sqm-scripts-nss=y" >> ./.config
-
-	# IPQ60xx/LiBwrt NSS feed 不提供 qca-nss-ppe，也没有 ppe_drv.h。
-	# ECM PPE frontend 无法在此目标编译，保持 NSS frontend 即可。
 else
 	echo "跳过 NSS 配置：$(target_subtarget) 沿用上游默认"
 fi
