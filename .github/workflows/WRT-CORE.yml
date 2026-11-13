@@ -116,6 +116,7 @@ jobs:
           echo "WRT_KVER=none" >> "$GITHUB_ENV"
           echo "WRT_LIST=none" >> "$GITHUB_ENV"
           echo "WRT_WIFI=none" >> "$GITHUB_ENV"
+          echo "WRT_NET=none" >> "$GITHUB_ENV"
           echo "WRT_CI=$WRT_CI" >> "$GITHUB_ENV"
 
           if [ -z "$WRT_ARCH" ]; then
@@ -213,6 +214,23 @@ jobs:
           "$GITHUB_WORKSPACE/Scripts/Settings.sh"
 
           make defconfig -j"$(nproc)"
+
+          # ===== 编译前自检：以太网驱动是否真的被选中 =====
+          # 背景：qualcommax 的有线网口依赖 NSS 栈里的驱动包（如 kmod-qca-nss-dp）。
+          # 如果 NSS 选型被写乱（例如固件版本 choice 同时出现多个 =y），
+          # 这些包会被 defconfig 静默丢弃，导致“能启动、灯正常、网口全不通”。
+          # 在这里提前暴露，避免白跑两小时。
+          echo "======== network driver check ========"
+          grep -E '^(# )?CONFIG_(PACKAGE_)?(kmod-qca-nss-dp|kmod-nss-dp|kmod-qca-ssdk|kmod-dsa|kmod-nss-wifi-drv|NSS_FIRMWARE_VERSION)' .config || echo "no qualcomm network/NSS entries in .config"
+          echo "======================================"
+
+          NET_DRV=$(grep -cE '^CONFIG_PACKAGE_(kmod-qca-nss-dp|kmod-nss-dp|kmod-qca-ssdk)=y' .config || true)
+          if [ "${NET_DRV:-0}" -eq 0 ]; then
+            echo "::warning title=无高通以太网驱动::.config 中未选中 kmod-qca-nss-dp / kmod-nss-dp / kmod-qca-ssdk，刷机后有线网口可能不通"
+          else
+            echo "network driver selected: ${NET_DRV} 项"
+          fi
+
           make clean -j"$(nproc)"
 
       - name: Clean Daed Build
@@ -294,7 +312,7 @@ jobs:
 
             echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> "$GITHUB_ENV"
 
-            # ===== WiFi 自检：直接从 manifest 判断无线组件是否真的进了固件 =====
+            # ===== WiFi 自检 =====
             if [ -n "$MANIFEST" ]; then
               WIFI_WPAD=$(grep -oP '^wpad[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
               WIFI_DRV=$(grep -oP '^kmod-ath1[0-9]k[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
@@ -306,12 +324,24 @@ jobs:
               else
                 echo "WRT_WIFI=❌ 未包含（无 wpad/hostapd，属无 WiFi 固件）" >> "$GITHUB_ENV"
               fi
-
-              echo "======== wifi check ========"
-              grep -E '^(wpad|kmod-ath|ipq-wifi|luci-mod-network)' "$MANIFEST" || echo "no wifi packages"
-              echo "============================"
             else
               echo "WRT_WIFI=未知（未找到 manifest）" >> "$GITHUB_ENV"
+            fi
+
+            # ===== 以太网驱动自检 =====
+            if [ -n "$MANIFEST" ]; then
+              NET_PKGS=$(grep -oP '^(kmod-qca-nss-dp|kmod-nss-dp|kmod-qca-ssdk|kmod-nss-wifi-drv|kmod-dsa[^ ]*)[^ ]*' "$MANIFEST" | sort -u | tr '\n' ' ')
+              if [ -z "$NET_PKGS" ]; then
+                echo "WRT_NET=⚠️ manifest 内未发现 qca-nss-dp/ssdk 等包（可能为内核内置驱动）" >> "$GITHUB_ENV"
+              else
+                echo "WRT_NET=${NET_PKGS}" >> "$GITHUB_ENV"
+              fi
+
+              echo "======== network check ========"
+              grep -E '^(kmod-qca-nss|kmod-nss|kmod-qca-ssdk|kmod-dsa)' "$MANIFEST" || echo "no explicit ethernet driver package"
+              echo "==============================="
+            else
+              echo "WRT_NET=未知（未找到 manifest）" >> "$GITHUB_ENV"
             fi
 
             find ./bin/targets/ \
@@ -358,4 +388,5 @@ jobs:
 
             内核版本：${{ env.WRT_KVER }}
             WiFi 状态：${{ env.WRT_WIFI }}
+            网络驱动：${{ env.WRT_NET }}
             插件列表：${{ env.WRT_LIST }}
