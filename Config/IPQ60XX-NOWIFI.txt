@@ -1,14 +1,8 @@
 # ============================================================
 # ZN-M2 / 京东云亚瑟 AX1800 Pro（IPQ6000，ipq60xx）
 #
-# 对齐上游 VIKINGYFY/OpenWRT-CI 的 Config/IPQ60XX-WIFI-NO.txt：
-#   * 不再关闭 nss_packages feed —— 那是此前 NSS 状态栏不出现的根因；
-#   * 不再写 sqm-scripts-nss=n（上游靠默认值，关掉反而影响 NSS 组件联动）；
-#   * 其余保持本地口味：仅编 zn_m2、512M 内存档、彻底移除 WiFi 软件栈。
-#
-# 关于 PPE 条目数：PPE 硬件 flow 表的容量由 SoC 决定（ipq807x 为 4096，
-# ipq60xx 为 2048），不是 Kconfig 能改的项；能改的是“是否编译 PPE 驱动
-# + NSS 加速”，这两项在本配置里都保持开启。
+# 仅编 zn_m2，512M 内存档，不开 WiFi 软件栈。
+# NSS 与 PPE 均由源码默认选包提供，不在配置里做开关（与上游一致）。
 # ============================================================
 
 #设备平台
@@ -39,7 +33,7 @@ CONFIG_IPQ_MEM_PROFILE_512=y
 CONFIG_ATH11K_MEM_PROFILE_1G=n
 CONFIG_ATH11K_MEM_PROFILE_512M=y
 
-# NSS：对齐上游，保留 feed 与组件，不再强制关闭
+# NSS：保留 feed 与组件，不强制关闭（与上游一致）
 CONFIG_PACKAGE_kmod-qca-nss-crypto=y
 
 # 完整移除WiFi
