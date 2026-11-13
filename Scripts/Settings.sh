@@ -90,8 +90,13 @@ if [ -n "$WRT_PACKAGE" ]; then
 	echo -e "$WRT_PACKAGE" >> ./.config
 fi
 
-# 高通 NSS 配置。不要改写 DTS 文件，LiBwrt 6.x 没有 ipq6018-nowifi.dtsi。
-if [[ "$WRT_TARGET" == *"QUALCOMMAX"* ]]; then
+# 高通 NSS 配置：仅为 ipq60xx（ZN-M2）调参，必须按子平台分流。
+# 这段以前对 *QUALCOMMAX* 无条件追加，会把 NSS 固件版本钉成 12_5，
+# 与 function.sh 中 ipq60xx 路径的 12_2 冲突；
+# 而且 ipq807x 的有线网口依赖 qca-nss-dp，选型被搅乱后会出现
+# “能启动、灯正常、但所有网口不通”的故障（AX6 已实测到）。
+if [[ "$(target_subtarget)" == "ipq60xx" ]]; then
+	echo "应用 NSS 配置：$(target_subtarget)"
 	echo "CONFIG_FEED_nss_packages=n" >> ./.config
 	echo "CONFIG_FEED_sqm_scripts_nss=n" >> ./.config
 	echo "CONFIG_NSS_FIRMWARE_VERSION_11_4=n" >> ./.config
@@ -100,4 +105,6 @@ if [[ "$WRT_TARGET" == *"QUALCOMMAX"* ]]; then
 
 	# IPQ60xx/LiBwrt NSS feed 不提供 qca-nss-ppe，也没有 ppe_drv.h。
 	# ECM PPE frontend 无法在此目标编译，保持 NSS frontend 即可。
+else
+	echo "跳过 NSS 配置：$(target_subtarget) 沿用上游默认"
 fi
