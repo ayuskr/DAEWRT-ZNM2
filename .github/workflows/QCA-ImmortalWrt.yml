@@ -31,11 +31,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # IPQ60XX-NOWIFI : ZN-M2（京东云亚瑟 AX1800 Pro），编译期移除 WiFi
-        # IPQ807X-WIFI-YES: Redmi AX6，保留 WiFi（需先刷 OpenWrt U-Boot）
-        CONFIG: [IPQ60XX-NOWIFI, IPQ807X-WIFI-YES]
-        SOURCE: [VIKINGYFY/immortalwrt]
-        BRANCH: [owrt]
+        # 每个机型必须与源码一一配对，不能用 CONFIG × SOURCE 叉乘：
+        # 叉乘会把 ZN-M2 送去编译主线、或把 AX6 送去编译 fork，都是错的。
+        include:
+          # ZN-M2（京东云亚瑟 AX1800 Pro）：fork，编译期移除 WiFi，NSS/PPE 定制
+          - CONFIG: IPQ60XX-NOWIFI
+            SOURCE: VIKINGYFY/immortalwrt
+            BRANCH: owrt
+
+          # Redmi AX6：fork 的 ipq807x 有线数据面在 AX6 上不通
+          # （链路 1Gbps、br-lan 已内置写死、静态也不通，配置层已排除），
+          # 改用与 kwrt 同源的 immortalwrt 主线源码。
+          - CONFIG: IPQ807X-WIFI-ML
+            SOURCE: immortalwrt/immortalwrt
+            BRANCH: master
 
     uses: ./.github/workflows/WRT-CORE.yml
     with:
@@ -55,7 +64,7 @@ jobs:
 
   # 编译全部结束后统一清理（避免与矩阵 job 并发误删）。
   #
-  # 保留清单：.github/keep-models.txt，每行一个型号（如 IPQ807X-WIFI-YES）。
+  # 保留清单：.github/keep-models.txt，每行一个型号（如 IPQ807X-WIFI-ML）。
   # 手动运行时可勾选 KEEP_MODEL 决定是否把本次编译的型号写进清单。
   #
   # 清理规则：
@@ -93,7 +102,7 @@ jobs:
 
           gh release list --limit 100 --json tagName,publishedAt \
             --jq --arg s "$started" '.[] | select(.publishedAt >= $s) | .tagName' < /dev/null \
-            | sed -nE 's/^.*(IPQ[0-9]+XX-[A-Z-]+)_[0-9]{2}\.[0-9]{2}\.[0-9]{2}-[0-9.]+$/\1/p' \
+            | sed -nE 's/^.*(IPQ[0-9]+XX-[A-Z0-9-]+)_[0-9]{2}\.[0-9]{2}\.[0-9]{2}-[0-9.]+$/\1/p' \
             | sort -u > /tmp/new-models.txt
 
           echo "======== 本次编译型号 ========"
@@ -197,7 +206,7 @@ jobs:
             fi
 
             # 型号解析：QCA-xxx-<型号>_<日期> -> <型号>（sed 无匹配时也返回 0）
-            model=$(echo "$tag" | sed -nE 's/^.*(IPQ[0-9]+XX-[A-Z-]+)_[0-9]{2}\.[0-9]{2}\.[0-9]{2}-[0-9.]+$/\1/p')
+            model=$(echo "$tag" | sed -nE 's/^.*(IPQ[0-9]+XX-[A-Z0-9-]+)_[0-9]{2}\.[0-9]{2}\.[0-9]{2}-[0-9.]+$/\1/p')
 
             if [ -z "$model" ]; then
               echo "跳过（无法识别型号，未删除）：$tag"
