@@ -82,6 +82,108 @@ config interface 'wan6'
 EOF
 fi
 
+# ============================================================
+# PPE / NSS 诊断（qualcommax：ipq807x + ipq60xx）
+#
+# 目的：确认 PPE 硬件 flow 表的真实容量（ipq807x 4096 / ipq60xx 2048 是否硬上限）。
+# 用法：刷机后 SSH 执行 ppe-diag，或直接看 /tmp/ppe-diag.txt
+#       （首启动会自动采集一次并写入 syslog，标签 ppe-diag）
+# ============================================================
+if [[ "$(target_subtarget)" == "ipq807x" || "$(target_subtarget)" == "ipq60xx" ]]; then
+	echo "内置 ppe-diag 诊断脚本（输出 PPE/NSS 表容量与驱动参数）"
+
+	mkdir -p ./files/usr/sbin ./files/etc/uci-defaults
+
+	cat > ./files/usr/sbin/ppe-diag <<'PPE_DIAG_EOF'
+#!/bin/sh
+# PPE / NSS 诊断：打印硬件 flow 表容量、驱动参数与设备树节点
+OUT=${1:-/tmp/ppe-diag.txt}
+
+dump_node() {
+	[ -d "$1" ] || return 0
+	echo "[$1]"
+	for f in "$1"/*; do
+		[ -f "$f" ] || continue
+		sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+		case "$sz" in
+			1|2|4|8) echo "  $(basename "$f") = 0x$(od -An -tx1 "$f" | tr -d ' \n')" ;;
+			"") : ;;
+			*) echo "  $(basename "$f") = <${sz} bytes>" ;;
+		esac
+	done
+}
+
+{
+	echo "===== PPE / NSS 诊断 $(date) ====="
+	echo
+	echo "--- 机型 ---"
+	cat /tmp/sysinfo/model 2>/dev/null
+	cat /tmp/sysinfo/board_name 2>/dev/null
+	uname -a
+	echo
+	echo "--- 相关模块 ---"
+	lsmod 2>/dev/null | grep -Ei 'ppe|nss|edma|dsa|qca' || echo "(无匹配模块)"
+	echo
+	echo "--- 模块参数（表容量常见于此）---"
+	for d in /sys/module/*ppe* /sys/module/*nss* /sys/module/qca*; do
+		[ -d "$d" ] || continue
+		echo "[$d]"
+		for p in "$d"/parameters/*; do
+			[ -e "$p" ] && echo "  $(basename "$p") = $(cat "$p" 2>/dev/null)"
+		done
+	done
+	echo
+	echo "--- 设备树：ppe 节点 ---"
+	found=""
+	for n in $(find /proc/device-tree -maxdepth 4 -iname '*ppe*' 2>/dev/null); do
+		found=1
+		dump_node "$n"
+	done
+	[ -z "$found" ] && echo "(无 ppe 节点)"
+	echo
+	echo "--- 设备树：switch / ess 节点 ---"
+	found=""
+	for n in $(find /proc/device-tree -maxdepth 4 \( -iname '*switch*' -o -iname '*ess*' \) 2>/dev/null); do
+		found=1
+		dump_node "$n"
+	done
+	[ -z "$found" ] && echo "(无 switch/ess 节点)"
+	echo
+	echo "--- debugfs 顶层 ---"
+	ls /sys/kernel/debug 2>/dev/null | head -40 || echo "(debugfs 未挂载)"
+	echo
+	echo "--- ecm / nss 状态 ---"
+	ls /sys/kernel/debug/ecm 2>/dev/null || echo "(无 ecm)"
+	echo
+	echo "--- 中断（ppe/edma/nss）---"
+	grep -Ei 'ppe|edma|nss' /proc/interrupts 2>/dev/null || echo "(无匹配)"
+	echo
+	echo "--- dmesg 关键行 ---"
+	dmesg 2>/dev/null | grep -Ei 'ppe|nss|edma|dsa|switch' | tail -40 || echo "(无匹配)"
+	echo
+	echo "===== 诊断结束 ====="
+} > "$OUT" 2>&1
+
+cat "$OUT"
+echo
+echo "结果已保存到 $OUT"
+PPE_DIAG_EOF
+
+	chmod 0755 ./files/usr/sbin/ppe-diag
+
+	cat > ./files/etc/uci-defaults/98-ppe-diag <<'UCI_EOF'
+#!/bin/sh
+# 首启动自动采集一次 PPE/NSS 诊断，写入 syslog（标签 ppe-diag）
+[ -x /usr/sbin/ppe-diag ] && /usr/sbin/ppe-diag /tmp/ppe-diag.txt >/dev/null 2>&1
+[ -f /tmp/ppe-diag.txt ] && logger -t ppe-diag -f /tmp/ppe-diag.txt
+
+rm -f /etc/uci-defaults/98-ppe-diag
+exit 0
+UCI_EOF
+
+	chmod 0755 ./files/etc/uci-defaults/98-ppe-diag
+fi
+
 # 将 Glass 设置为 LuCI 默认主题。
 mkdir -p ./files/etc/uci-defaults
 
