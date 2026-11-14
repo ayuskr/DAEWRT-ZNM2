@@ -35,15 +35,24 @@ UPDATE_PACKAGE() {
 }
 
 # 一次克隆仓库，按目录名精确拷贝若干子包到 package 顶层。
+# 克隆目录放在 ./.clone-tmp 下（不在 ./package 内），
+# 避免与目标目录同名时把源删掉。
 CLONE_MULTI() {
 	local REPO=$1
 	local BRANCH=$2
 	shift 2
 
-	local REPO_PATH="./package/${REPO#*/}"
+	local TMP_ROOT="./.clone-tmp"
+	local REPO_PATH="$TMP_ROOT/${REPO#*/}"
+
 	echo " "
 	echo "Clone $REPO ($BRANCH)"
-	git clone --depth=1 --single-branch --branch "$BRANCH" "https://github.com/$REPO.git" "$REPO_PATH"
+	rm -rf "$REPO_PATH"
+	mkdir -p "$TMP_ROOT"
+	git clone --depth=1 --single-branch --branch "$BRANCH" "https://github.com/$REPO.git" "$REPO_PATH" || {
+		echo "ERROR: clone failed: $REPO"
+		return 1
+	}
 
 	for DIR in "$@"; do
 		if [ -d "$REPO_PATH/$DIR" ]; then
@@ -51,7 +60,7 @@ CLONE_MULTI() {
 			cp -rf "$REPO_PATH/$DIR" "./package/$DIR"
 			echo "Copy package: $DIR"
 		else
-			echo "Skip missing directory: $DIR"
+			echo "ERROR: missing directory in repo: $DIR"
 		fi
 	done
 
@@ -74,7 +83,6 @@ CLONE_MULTI "gdy666/luci-app-lucky" "main" lucky luci-app-lucky
 
 # daed / dae / luci-app-daede 暂不引入：
 # daed 依赖 vmlinux-btf（需要 pahole + 影子内核），或要求内核 CONFIG_DEBUG_INFO_BTF=y。
-# 两者当前都不满足，选中后会在 package/install 阶段报 vmlinux-btf 缺失。
 
 # 上游插件集合
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
