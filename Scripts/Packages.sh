@@ -34,6 +34,33 @@ UPDATE_PACKAGE() {
 	fi
 }
 
+# 一次克隆仓库，按目录名精确拷贝若干子包到 package 顶层。
+# 不能反复用 UPDATE_PACKAGE 的 -iname 匹配：
+# dae / daed / luci-app-daede 互相包含，重复拷贝会把目录嵌套成
+# package/luci-app-daede/luci-app-daede，导致 make defconfig 报重复包。
+CLONE_MULTI() {
+	local REPO=$1
+	local BRANCH=$2
+	shift 2
+
+	local REPO_PATH="./package/${REPO#*/}"
+	echo " "
+	echo "Clone $REPO ($BRANCH)"
+	git clone --depth=1 --single-branch --branch "$BRANCH" "https://github.com/$REPO.git" "$REPO_PATH"
+
+	for DIR in "$@"; do
+		if [ -d "$REPO_PATH/$DIR" ]; then
+			rm -rf "./package/$DIR"
+			cp -rf "$REPO_PATH/$DIR" "./package/$DIR"
+			echo "Copy package: $DIR"
+		else
+			echo "Skip missing directory: $DIR"
+		fi
+	done
+
+	rm -rf "$REPO_PATH"
+}
+
 # 主题：默认主题由 QCA-ALL.yml 设为 vantage；glass 不加入
 UPDATE_PACKAGE "argon" "sbwml/luci-theme-argon" "openwrt-25.12"
 UPDATE_PACKAGE "aurora" "eamonxg/luci-theme-aurora" "master"
@@ -45,12 +72,10 @@ UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
 UPDATE_PACKAGE "shadcn" "eamonxg/luci-theme-shadcn" "main"
 UPDATE_PACKAGE "vantage" "anothaDev/luci-theme-vantage" "main"
 
-# daede 仓库包含 dae、daed、luci-app-daede；三个目录都需要提取。
-UPDATE_PACKAGE "dae" "kenzok8/openwrt-daede" "main" "pkg"
-UPDATE_PACKAGE "daed" "kenzok8/openwrt-daede" "main" "pkg"
-UPDATE_PACKAGE "luci-app-daede" "kenzok8/openwrt-daede" "main" "pkg"
-# lucky 仓库同时包含 lucky 后端和 luci-app-lucky
-UPDATE_PACKAGE "lucky" "gdy666/luci-app-lucky" "main" "pkg"
+# luci-app-daede 的 Makefile 会引用同仓库的 ../dae 与 ../daed 下的默认配置，
+# 三个目录必须一起拷到 package 顶层才能正常安装。
+CLONE_MULTI "kenzok8/openwrt-daede" "main" dae daed luci-app-daede
+CLONE_MULTI "gdy666/luci-app-lucky" "main" lucky luci-app-lucky
 
 # 上游插件集合
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
