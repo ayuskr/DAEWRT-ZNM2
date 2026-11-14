@@ -22,6 +22,12 @@ CONFIG_PACKAGE_luci-theme-material3=y
 # 来自 VIKINGYFY/packages（固件作者本人仓库），与内核无需额外匹配。
 CONFIG_PACKAGE_sing-box=y
 CONFIG_PACKAGE_luci-app-homeproxy=y
+
+# ===== gecoosac =====
+CONFIG_PACKAGE_gecoosac=y
+CONFIG_PACKAGE_luci-app-gecoosac=y
+CONFIG_PACKAGE_luci-i18n-gecoosac-zh-cn=y
+
 # 如需减体积可改用 tiny 版（两者互斥）：
 # CONFIG_PACKAGE_sing-box-tiny=y
 # CONFIG_SING_BOX_TINY_BUILD_CLASH_API=y
