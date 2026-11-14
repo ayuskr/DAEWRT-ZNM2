@@ -28,11 +28,18 @@ jobs:
     name: ${{matrix.CONFIG}}
     strategy:
       fail-fast: false
-      #max-parallel: 3
+      # NSS 配置使用专用 NSS 源码，其余配置继续使用 VIKINGYFY/immortalwrt。
       matrix:
-        CONFIG: [IPQ807X-WIFI-ML, IPQ60XX-NOWIFI, IPQ60XX-NSS]
-        SOURCE: [VIKINGYFY/immortalwrt]
-        BRANCH: [owrt]
+        include:
+          - CONFIG: IPQ807X-WIFI-ML
+            SOURCE: VIKINGYFY/immortalwrt
+            BRANCH: owrt
+          - CONFIG: IPQ60XX-NOWIFI
+            SOURCE: VIKINGYFY/immortalwrt
+            BRANCH: owrt
+          - CONFIG: IPQ60XX-NSS
+            SOURCE: laipeng668/openwrt-6.x
+            BRANCH: 25.12-nss
 
     #调用公用编译核心WRT-CORE.yml
     uses: ./.github/workflows/WRT-CORE.yml
