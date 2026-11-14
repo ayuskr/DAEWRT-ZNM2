@@ -35,9 +35,6 @@ UPDATE_PACKAGE() {
 }
 
 # 一次克隆仓库，按目录名精确拷贝若干子包到 package 顶层。
-# 不能反复用 UPDATE_PACKAGE 的 -iname 匹配：
-# dae / daed / luci-app-daede 互相包含，重复拷贝会把目录嵌套成
-# package/luci-app-daede/luci-app-daede，导致 make defconfig 报重复包。
 CLONE_MULTI() {
 	local REPO=$1
 	local BRANCH=$2
@@ -72,10 +69,12 @@ UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
 UPDATE_PACKAGE "shadcn" "eamonxg/luci-theme-shadcn" "main"
 UPDATE_PACKAGE "vantage" "anothaDev/luci-theme-vantage" "main"
 
-# luci-app-daede 的 Makefile 会引用同仓库的 ../dae 与 ../daed 下的默认配置，
-# 三个目录必须一起拷到 package 顶层才能正常安装。
-CLONE_MULTI "kenzok8/openwrt-daede" "main" dae daed luci-app-daede
+# lucky 仓库同时包含 lucky 后端和 luci-app-lucky
 CLONE_MULTI "gdy666/luci-app-lucky" "main" lucky luci-app-lucky
+
+# daed / dae / luci-app-daede 暂不引入：
+# daed 依赖 vmlinux-btf（需要 pahole + 影子内核），或要求内核 CONFIG_DEBUG_INFO_BTF=y。
+# 两者当前都不满足，选中后会在 package/install 阶段报 vmlinux-btf 缺失。
 
 # 上游插件集合
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"

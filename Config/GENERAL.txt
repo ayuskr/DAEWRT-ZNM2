@@ -18,8 +18,11 @@ CONFIG_PACKAGE_luci-theme-material3=y
 # CONFIG_PACKAGE_luci-app-aurora-config is not set
 
 # 用户要求的插件
-CONFIG_PACKAGE_luci-app-daede=y
-CONFIG_PACKAGE_daed=y
+# daed 已暂时移除：它依赖 vmlinux-btf，而本内核未开 CONFIG_DEBUG_INFO_BTF，
+# 且 CI 未安装 pahole，无法生成 detached BTF。
+# 需要用 daed 时追加：CONFIG_KERNEL_DEBUG_INFO_BTF=y + CI 安装 pahole
+# CONFIG_PACKAGE_luci-app-daede is not set
+# CONFIG_PACKAGE_daed is not set
 CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_microsocks=y
