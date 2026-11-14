@@ -17,12 +17,24 @@ CONFIG_PACKAGE_luci-theme-material3=y
 # CONFIG_PACKAGE_luci-theme-aurora is not set
 # CONFIG_PACKAGE_luci-app-aurora-config is not set
 
-# 用户要求的插件
-# daed 已暂时移除：它依赖 vmlinux-btf，而本内核未开 CONFIG_DEBUG_INFO_BTF，
-# 且 CI 未安装 pahole，无法生成 detached BTF。
-# 需要用 daed 时追加：CONFIG_KERNEL_DEBUG_INFO_BTF=y + CI 安装 pahole
+# ===== 代理内核：sing-box =====
+# 用户态代理，不依赖 eBPF / BTF，无需 vmlinux-btf。
+# 来自 VIKINGYFY/packages（固件作者本人仓库），与内核无需额外匹配。
+CONFIG_PACKAGE_sing-box=y
+CONFIG_PACKAGE_luci-app-homeproxy=y
+# 如需减体积可改用 tiny 版（两者互斥）：
+# CONFIG_PACKAGE_sing-box-tiny=y
+# CONFIG_SING_BOX_TINY_BUILD_CLASH_API=y
+# CONFIG_SING_BOX_TINY_BUILD_GVISOR=y
+# CONFIG_SING_BOX_TINY_BUILD_QUIC=y
+# CONFIG_SING_BOX_TINY_BUILD_UTLS=y
+# CONFIG_SING_BOX_TINY_BUILD_WIREGUARD=y
+# daed / dae 已弃用：依赖内核 BTF，本内核未开 CONFIG_DEBUG_INFO_BTF
 # CONFIG_PACKAGE_luci-app-daede is not set
 # CONFIG_PACKAGE_daed is not set
+# CONFIG_PACKAGE_luci-app-dae is not set
+
+# 其他插件
 CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_microsocks=y
@@ -35,7 +47,6 @@ CONFIG_PACKAGE_luci-app-autoreboot=y
 CONFIG_PACKAGE_luci-app-ramfree=y
 
 # 移除文件共享、存储和容器类插件
-# CONFIG_PACKAGE_luci-app-dae is not set
 # CONFIG_PACKAGE_luci-app-samba4 is not set
 # CONFIG_PACKAGE_luci-app-ksmbd is not set
 # CONFIG_PACKAGE_luci-app-nfs is not set
@@ -58,6 +69,9 @@ CONFIG_PACKAGE_luci-app-ramfree=y
 # CONFIG_PACKAGE_luci-app-wol is not set
 # CONFIG_PACKAGE_luci-app-wolultra is not set
 # CONFIG_PACKAGE_luci-app-attendedsysupgrade is not set
+# CONFIG_PACKAGE_luci-app-openclash is not set
+# CONFIG_PACKAGE_luci-app-passwall is not set
+# CONFIG_PACKAGE_luci-app-passwall2 is not set
 
 # 编译与系统参数
 CONFIG_CCACHE=y
