@@ -49,11 +49,12 @@ UPDATE_PACKAGE "shadcn" "eamonxg/luci-theme-shadcn" "main"
 UPDATE_PACKAGE "vantage" "anothaDev/luci-theme-vantage" "main"
 
 # 用户要求的代理及管理插件
-# openwrt-daede 同时包含 daed 后端和 luci-app-daede
-UPDATE_PACKAGE "openwrt-daede" "kenzok8/openwrt-daede" "main"
+# openwrt-daede 同时包含 daed 后端和 luci-app-daede，分别提取到 package 顶层
+UPDATE_PACKAGE "daed" "kenzok8/openwrt-daede" "main" "pkg"
+UPDATE_PACKAGE "luci-app-daede" "kenzok8/openwrt-daede" "main" "pkg"
 # lucky 仓库同时包含 lucky 后端和 luci-app-lucky
 UPDATE_PACKAGE "lucky" "gdy666/luci-app-lucky" "main" "pkg"
-UPDATE_PACKAGE "microsocks" "immortalwrt/packages" "master" "" "microsocks"
+UPDATE_PACKAGE "microsocks" "immortalwrt/packages" "master" "pkg"
 
 # 上游插件集合
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
