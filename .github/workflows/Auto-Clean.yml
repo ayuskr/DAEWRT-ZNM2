@@ -1,20 +1,14 @@
 name: Auto-Clean
 
-# on:
-#   #自动清理：每周一早上6点
-#   schedule:
-#     - cron: 0 22 * * 0
+# 只允许手动触发。
+# 原先是 workflow_run: Cache-Clean completed，但那种触发方式下 inputs 为空，
+# releases_keep_latest 会回落到 '0'，等于每次清缓存都把所有固件发布删光。
 on:
-  #自动编译：当Cache-Clean运行完成后
-  workflow_run:
-    workflows: ["Cache-Clean"]
-    types:
-       - completed
-  #手动清理
   workflow_dispatch:
     inputs:
       NUMBER:
-        default: '8'
+        description: '保留最新几个发布，0 表示全部删除'
+        default: '6'
         required: false
         type: string
 
@@ -22,21 +16,16 @@ permissions: write-all
 
 jobs:
   auto_clean:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Delete old Releases and Workflows
         uses: ophub/delete-releases-workflows@main
         with:
           gh_token: ${{secrets.GITHUB_TOKEN}}
           delete_releases: true
-          releases_keep_latest: ${{inputs.NUMBER || '0'}}
+          # 默认保留 6 个（三个配置各 2 个），不再出现 0 的情况
+          releases_keep_latest: ${{inputs.NUMBER || '6'}}
           delete_tags: true
           delete_workflows: true
-          workflows_keep_day: 0
-
-
-
-
-
-
-
+          # 保留 7 天运行记录，便于回溯失败原因；原来的 0 会把日志一并删掉
+          workflows_keep_day: 7
