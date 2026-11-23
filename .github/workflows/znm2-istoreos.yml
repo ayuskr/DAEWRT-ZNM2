@@ -45,19 +45,17 @@ jobs:
           python3 ../experimental/istoreos/board.py
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          ./scripts/feeds install -p store luci-app-store
-          test -f package/feeds/store/luci-app-store/Makefile
-          # This image uses full sing-box. Register only that provider during package scanning.
+          ./scripts/feeds install -p store taskd luci-lib-xterm luci-lib-taskd luci-app-store
+          for pkg in taskd luci-lib-xterm luci-lib-taskd luci-app-store; do
+            test -f "package/feeds/store/$pkg/Makefile" || { echo "::error::Missing feed recipe for $pkg"; exit 1; }
+          done
           recipe=feeds/packages/net/sing-box/Makefile
-          tiny='$(eval $(call BuildPackage,sing-box-tiny))'
           grep -Fxq '$(eval $(call BuildPackage,sing-box))' "$recipe"
-          if grep -Fxq "$tiny" "$recipe"; then
-            sed -i '/^$(eval $(call BuildPackage,sing-box-tiny))$/d' "$recipe"
-          fi
-          # feeds install creates symlinks here. WeeChat is outside this board profile.
+          sed -i '/^$(eval $(call BuildPackage,sing-box-tiny))$/d' "$recipe"
           find package/feeds -type l -name luci-app-weechat -print -delete
           mkdir -p package/custom/luci-app-homeproxy
           rsync -a --exclude=.git ../hp/ package/custom/luci-app-homeproxy/
+          rm -rf tmp
           cp ../experimental/istoreos/znm2.config .config
           echo 'CONFIG_PACKAGE_sing-box=y' >> .config
           make defconfig 2>&1 | tee "$RUNNER_TEMP/znm2-defconfig.log"
@@ -65,9 +63,26 @@ jobs:
             echo '::error::Kconfig dependency cycle in package metadata'
             exit 1
           fi
-          for symbol in TARGET_qualcommax_ipq60xx_DEVICE_zn_m2 TARGET_ROOTFS_SQUASHFS PACKAGE_luci PACKAGE_luci-app-store PACKAGE_sing-box PACKAGE_luci-app-homeproxy; do
-            grep -Fx "CONFIG_${symbol}=y" .config || { echo "::error::Missing required config: CONFIG_${symbol}=y"; exit 1; }
+          failed=0
+          for sym in $(sed -n 's/^CONFIG_\(.*\)=y$/\1/p' ../experimental/istoreos/znm2.config) PACKAGE_sing-box; do
+            if ! grep -Fxq "CONFIG_${sym}=y" .config; then
+              echo "::error::Missing required config: CONFIG_${sym}=y"
+              grep -F "$sym" .config || true
+              awk -v key="$sym" '$1=="config" || $1=="menuconfig" {show=($2==key)} show {print}' tmp/.config-package.in
+              failed=1
+            fi
           done
+          exit "$failed"
+      - name: Preserve configuration evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: znm2-config-diagnostics
+          include-hidden-files: true
+          path: |
+            wrt/.config
+            wrt/tmp/.config-package.in
+            wrt/tmp/.packageinfo
       - name: Compile native sysupgrade image
         working-directory: wrt
         run: |
