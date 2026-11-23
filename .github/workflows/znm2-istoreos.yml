@@ -41,15 +41,32 @@ jobs:
       - name: Integrate board and feeds
         working-directory: wrt
         run: |
+          set -euo pipefail
           python3 ../experimental/istoreos/board.py
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          ./scripts/feeds install -p store luci-app-store
+          test -f package/feeds/store/luci-app-store/Makefile
+          # This image uses full sing-box. Register only that provider during package scanning.
+          recipe=feeds/packages/net/sing-box/Makefile
+          tiny='$(eval $(call BuildPackage,sing-box-tiny))'
+          grep -Fxq '$(eval $(call BuildPackage,sing-box))' "$recipe"
+          if grep -Fxq "$tiny" "$recipe"; then
+            sed -i '/^$(eval $(call BuildPackage,sing-box-tiny))$/d' "$recipe"
+          fi
+          # feeds install creates symlinks here. WeeChat is outside this board profile.
+          find package/feeds -type l -name luci-app-weechat -print -delete
           mkdir -p package/custom/luci-app-homeproxy
           rsync -a --exclude=.git ../hp/ package/custom/luci-app-homeproxy/
           cp ../experimental/istoreos/znm2.config .config
-          make defconfig
-          for symbol in TARGET_qualcommax_ipq60xx_DEVICE_zn_m2 TARGET_ROOTFS_SQUASHFS PACKAGE_luci PACKAGE_luci-app-store PACKAGE_luci-app-homeproxy; do
-            grep -Fx "CONFIG_${symbol}=y" .config
+          echo 'CONFIG_PACKAGE_sing-box=y' >> .config
+          make defconfig 2>&1 | tee "$RUNNER_TEMP/znm2-defconfig.log"
+          if grep -Fq 'recursive dependency detected' "$RUNNER_TEMP/znm2-defconfig.log"; then
+            echo '::error::Kconfig dependency cycle in package metadata'
+            exit 1
+          fi
+          for symbol in TARGET_qualcommax_ipq60xx_DEVICE_zn_m2 TARGET_ROOTFS_SQUASHFS PACKAGE_luci PACKAGE_luci-app-store PACKAGE_sing-box PACKAGE_luci-app-homeproxy; do
+            grep -Fx "CONFIG_${symbol}=y" .config || { echo "::error::Missing required config: CONFIG_${symbol}=y"; exit 1; }
           done
       - name: Compile native sysupgrade image
         working-directory: wrt
